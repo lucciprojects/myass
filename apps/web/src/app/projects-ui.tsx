@@ -404,9 +404,9 @@ export function ProjectDialogs({
     projects?.status === "agentOffline";
 
   const sortedProjects = projects
-    ? [projects.working, ...projects.projects.slice().sort((a, b) =>
+    ? projects.projects.slice().sort((a, b) =>
         b.updatedAt.localeCompare(a.updatedAt),
-      )]
+      )
     : [];
 
   const close = () => setMode(null);

@@ -692,8 +692,10 @@ export class ControlClient implements OnModuleDestroy {
       throw new AgentRejectedError(`agent refused ${prefix} reset: ${reset}`);
     }
 
+    const slotPrefix = `${prefix} SLOT`;
+
     for (const [index, slot] of slots.entries()) {
-      const [reply] = await this.command(slotLine(prefix, index, slot));
+      const [reply] = await this.command(slotLine(slotPrefix, index, slot));
 
       if (!reply.startsWith("ok ")) {
         throw new AgentRejectedError(
