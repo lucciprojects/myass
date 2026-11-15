@@ -90,6 +90,87 @@ void DspEngine::loopUndo() {
     looper_.undo();
 }
 
+bool DspEngine::loopSetTempo(float bpm, int beatsPerBar) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return looper_.setTempo(bpm, beatsPerBar);
+}
+
+bool DspEngine::loopSetBars(int bars) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return looper_.setBars(bars);
+}
+
+void DspEngine::loopSetClickMode(ClickMode mode) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    looper_.setClickMode(mode);
+}
+
+DspEngine::LayerDump DspEngine::dumpLayer(
+    int layer,
+    std::size_t offset,
+    std::size_t count
+) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    const Looper::Dump dump = looper_.dump(layer, offset, count);
+
+    LayerDump result;
+    result.busy = dump.busy;
+    result.offset = offset;
+    result.total = dump.total;
+    result.samples = dump.samples;
+    result.count = dump.samples.size();
+
+    return result;
+}
+
+bool DspEngine::commitProject(StagedProject& staged) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    // A load replaces every buffer, so it cannot run while one of them is
+    // still being written by a take.
+    if (looper_.anyTakeActive()) {
+        return false;
+    }
+
+    if (!looper_.load(staged.loop)) {
+        return false;
+    }
+
+    // The board is part of the project, but only when the bundle carried one.
+    // An older project with no board leaves the live chain alone.
+    if (staged.setsBoard) {
+        effects_ = std::move(staged.board);
+    }
+
+    return true;
+}
+
+std::vector<EffectSnapshot> DspEngine::loopChainSnapshot(int layer) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    const EffectChain& chain = looper_.chain(layer);
+
+    std::vector<EffectSnapshot> result;
+    result.reserve(chain.size());
+
+    for (const auto& effect : chain) {
+        result.push_back(snapshotOf(*effect));
+    }
+
+    return result;
+}
+
+void DspEngine::setLoopChain(int layer, EffectChain chain) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    looper_.pasteChain(layer, std::move(chain));
+}
+
+std::size_t DspEngine::loopCapacitySamples() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return looper_.capacity();
+}
+
 LooperState DspEngine::loopState() const {
     std::lock_guard<std::mutex> lock(mutex_);
 

@@ -17,6 +17,7 @@ add_library(myass-core
     src/dsp/Looper.cpp
     src/effects/MixableEffect.cpp
     src/effects/StandardEffects.cpp
+    src/control/Base64.cpp
     src/control/ControlServer.cpp
 )
 

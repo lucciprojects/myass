@@ -51,6 +51,7 @@ function predict(state: LooperState, action: LooperAction): LooperState {
     waiting: false,
     countdown: 0,
     seconds: 0,
+    samples: 0,
     position: 0,
     truncated: false,
   });
@@ -63,6 +64,13 @@ function predict(state: LooperState, action: LooperAction): LooperState {
     countdownSeconds: state.countdownSeconds,
     transportSeconds: state.transportSeconds,
     paused: state.paused,
+    sampleRate: state.sampleRate,
+    bpm: state.bpm,
+    beatsPerBar: state.beatsPerBar,
+    bars: state.bars,
+    click: state.click,
+    loopSamples: state.loopSamples,
+    revision: state.revision,
     layers,
     ...overrides,
   });

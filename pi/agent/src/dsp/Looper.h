@@ -3,8 +3,13 @@
 #include "effects/Effect.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
+
+// Where the metronome is allowed to sound. The click is generated on the way
+// out and never written into a layer, so no take can capture it.
+enum class ClickMode { Off, CountIn, CountInRecording };
 
 // Sized once, at construction, from LooperConfig. Changing any of these needs
 // a restart: every layer buffer is allocated up front precisely so the audio
@@ -13,20 +18,51 @@ struct LooperConfig {
     int sampleRate = 48000;
     int maxLayers = 8;
 
-    // Longest single loop. 16s is 3MB per layer, so 8 layers is 24.6MB.
-    float maxSeconds = 16.0f;
+    // Longest single loop. 32s is 6MB per layer, so 8 layers is 49MB. That is
+    // the ceiling for bar counts as much as it is for FREE takes: a project
+    // load may not exceed it either.
+    float maxSeconds = 32.0f;
 
     // Applied only to overdub passes, never to a first take. A first take is
     // stored at unity so a riff comes back at the level it was played; this is
     // what stops later passes from running away as they accumulate.
     float overdubGain = 0.7f;
 
-    // How long between arming record and the take actually beginning. Fixed at
-    // three seconds so a player can count it in; it lives in the config so a
-    // headless test can play with it and the state still reports the right
-    // scale to a countdown UI.
-    float countdownSeconds = 3.0f;
+    // Musical time. The count-in is derived from these rather than being a
+    // fixed wall-clock duration: one bar at the current tempo, so a take always
+    // starts on a downbeat. bars = 0 means FREE, the pre-tempo behaviour where
+    // stopping the take defines its length.
+    float bpm = 120.0f;
+    int beatsPerBar = 4;
+    int bars = 0;
+    ClickMode click = ClickMode::CountInRecording;
 };
+
+// One layer of a project load. The buffer is moved in rather than copied, so
+// the audio thread only pays for the swap, never for assembling the project.
+struct LoopLoadLayer {
+    std::vector<float> data;
+    std::size_t samples = 0;
+    float level = 1.0f;   // normalised 0-1, already converted by the caller
+    bool muted = false;
+    bool playing = false;
+    bool truncated = false;
+    EffectChain chain;
+};
+
+// A whole project as one transaction: either every layer and the grid apply,
+// or nothing changes.
+struct LoopLoad {
+    // Index aligned with the looper's layers; an empty data buffer means the
+    // layer is empty in the project.
+    std::vector<LoopLoadLayer> layers;
+    float bpm = 120.0f;
+    int beatsPerBar = 4;
+    int bars = 0;
+    ClickMode click = ClickMode::CountInRecording;
+    std::size_t loopSamples = 0;
+};
+
 
 struct LoopLayerState {
     int index = 0;
@@ -57,6 +93,15 @@ struct LoopLayerState {
     // because the player asked it to.
     bool truncated = false;
 
+    // Exact integer length in samples. seconds is derived from it for the
+    // existing UI; this field exists so a project round trip never has to
+    // recover a WAV length by rounding a float back up.
+    std::size_t samples = 0;
+
+    // Bumped only when this layer's audio changes. The API's auto-save poller
+    // compares it against the copy it already has and dumps only on a mismatch.
+    std::uint64_t revision = 0;
+
     // Whether this layer's saved chain is the same board as the live one. Set
     // by the engine rather than the looper, because only the engine knows what
     // is live.
@@ -76,6 +121,19 @@ struct LooperState {
     // True while the master transport is frozen: the clock holds its position
     // and no layer contributes until the player resumes.
     bool paused = false;
+
+    // Musical time and the derived grid. loopSamples is the authoritative
+    // cycle length; transportSeconds is its float form for the existing UI.
+    int sampleRate = 48000;
+    float bpm = 120.0f;
+    int beatsPerBar = 4;
+    int bars = 0;
+    ClickMode click = ClickMode::CountInRecording;
+    std::size_t loopSamples = 0;
+
+    // Global change counter. Anything that alters what a project save would
+    // capture bumps it; the per-layer counters narrow that down to audio.
+    std::uint64_t revision = 0;
 };
 
 /**
@@ -143,10 +201,46 @@ public:
     // under an older setting.
     void pasteChain(int layer, EffectChain chain);
 
+    // Musical time. Both refuse while a layer holds audio or a take is armed:
+    // there is no time-stretch, so moving the grid under existing audio would
+    // silently change what the player already committed to.
+    bool setTempo(float bpm, int beatsPerBar);
+    bool setBars(int bars);
+
+    // Never fails; Off, CountIn and CountInRecording are all valid states.
+    void setClickMode(ClickMode mode);
+
+    // Replaces the entire loop with a saved project. Validates everything
+    // first and returns false without touching anything if the project does
+    // not fit; on success the rig lands paused.
+    bool load(LoopLoad& load);
+
+    // What a dump of one layer looks like. busy is set while a take is being
+    // written, because reading a buffer mid-take would send a half-recorded
+    // loop to the project store.
+    struct Dump {
+        bool busy = false;
+        std::size_t total = 0;
+        std::vector<float> samples;
+    };
+    Dump dump(int index, std::size_t offset, std::size_t count) const;
+
+    bool hasContent() const;
+    bool anyTakeActive() const;
+
+    // The sample grid derived from bpm and beatsPerBar.
+    std::size_t barSamples() const;
+    std::size_t beatSamples() const;
+    std::size_t loopSamplesForBars(int bars) const;
+
+    std::uint64_t revision() const { return revision_; }
+    std::uint64_t layerRevision(int index) const;
+
     LooperState state() const;
 
     int layerCount() const { return config_.maxLayers; }
     float maxSeconds() const { return config_.maxSeconds; }
+    std::size_t capacity() const { return capacity_; }
 
     // Exposed so the engine can compare a layer's saved board against the live
     // one when building state.
@@ -164,7 +258,9 @@ private:
         std::size_t stopAt = 0;
         bool muted = false;
         bool truncated = false;
+        bool quantized = false;
         float level = 1.0f;
+        std::uint64_t revision = 0;
         EffectChain chain;
     };
 
@@ -177,6 +273,13 @@ private:
     std::size_t secondsToSamples(float seconds) const;
     std::size_t scheduleStart();
     bool anyFirstTakeArmed() const;
+
+    // The layer whose count-in or take the click should follow. Null when no
+    // take is pending or running.
+    const Layer* clickSource() const;
+    bool clickEnabledNow() const;
+    float nextClickSample();
+    void bumpRevision();
 
     LooperConfig config_;
     std::size_t capacity_ = 0;
@@ -192,6 +295,20 @@ private:
     // True while the transport is frozen. process() holds the clock and is
     // silent; a take cannot progress while paused, so the UI must not arm.
     bool paused_ = false;
+
+    // Musical time and its change counter.
+    float bpm_ = 120.0f;
+    int beatsPerBar_ = 4;
+    int bars_ = 0;
+    ClickMode clickMode_ = ClickMode::CountInRecording;
+    std::uint64_t revision_ = 0;
+
+    // Click envelope: which beat last fired, how far into its 3ms burst we are,
+    // and whether that burst is the accented downbeat. Keeping this here rather
+    // than in a render callback means the click costs the same on every block.
+    long long clickBeat_ = -1;
+    std::size_t clickAge_ = 0;
+    bool clickAccent_ = false;
 
     std::vector<Layer> layers_;
 };

@@ -58,18 +58,40 @@ export const LooperLayerSchema = z.object({
   position: z.number().nonnegative(),
   countdown: z.number().nonnegative(),
   max: z.number().nonnegative(),
+  // Exact integer length. seconds is derived from it for display; a project
+  // save reads this so a WAV length is never recovered by rounding.
+  samples: z.number().int().nonnegative(),
+  // Bumped by the agent only when this layer's audio changes.
+  revision: z.number().int().nonnegative(),
 });
+
+/**
+ * Where the click is allowed to sound. It is generated on the way out and is
+ * never recorded, so a take can never capture it.
+ */
+export const ClickModeSchema = z.enum(["off", "countin", "countin-record"]);
 
 export const LooperStateSchema = z.object({
   maxSeconds: z.number().positive(),
   // The countdown scale the agent arms with, so the UI counts down on the same
-  // clock as the audio thread.
+  // clock as the audio thread. It is one bar at the current tempo.
   countdownSeconds: z.number().positive(),
   // The cycle length in seconds, 0 when no loop is running.
   transportSeconds: z.number().nonnegative(),
   // True while the master transport is frozen at a sample: the loops are
   // silent and resume exactly where they stopped.
   paused: z.boolean(),
+  // Musical time. bars = 0 is FREE: stopping the take defines its length.
+  sampleRate: z.number().int().positive(),
+  bpm: z.number(),
+  beatsPerBar: z.number().int().positive(),
+  bars: z.number().int().nonnegative(),
+  click: ClickModeSchema,
+  // The authoritative cycle length in samples; transportSeconds is its float
+  // form for display.
+  loopSamples: z.number().int().nonnegative(),
+  // Global change counter: anything a project save would capture bumps it.
+  revision: z.number().int().nonnegative(),
   layers: z.array(LooperLayerSchema),
 });
 
@@ -78,6 +100,7 @@ export const LooperStateSchema = z.object({
  * bare positional argument and the value after it. clear with no layer wipes
  * every layer; undo clears the most recent one. record takes an optional max in
  * seconds for the take; chain pastes the current live chain onto the layer.
+ * tempo, bars and click are transport settings and take no layer.
  */
 export const LooperActionSchema = z
   .object({
@@ -90,22 +113,41 @@ export const LooperActionSchema = z
       "clear",
       "undo",
       "chain",
+      "tempo",
+      "bars",
+      "click",
     ]),
     layer: z.number().int().nonnegative().optional(),
     value: z.number().min(0).max(100).optional(),
     max: z.number().positive().optional(),
+    bpm: z.number().min(40).max(240).optional(),
+    beats: z.number().int().min(2).max(12).optional(),
+    // 0 is FREE; the agent rejects anything that does not fit in its buffer.
+    bars: z.number().int().min(0).max(64).optional(),
+    click: ClickModeSchema.optional(),
   })
   .refine(
     (action) =>
       action.action === "clear" || action.action === "undo" ||
-      action.action === "play" || action.layer !== undefined,
+      action.action === "play" || action.action === "tempo" ||
+      action.action === "bars" || action.action === "click" ||
+      action.layer !== undefined,
     {
       message:
-        "record, stop, mute, level and chain all need a layer; play may drive the whole transport",
+        "record, stop, mute, level and chain all need a layer; play may drive the whole transport; tempo, bars and click need none",
     },
   )
   .refine((action) => action.action !== "level" || action.value !== undefined, {
     message: "level needs a value",
+  })
+  .refine((action) => action.action !== "tempo" || action.bpm !== undefined, {
+    message: "tempo needs a bpm",
+  })
+  .refine((action) => action.action !== "bars" || action.bars !== undefined, {
+    message: "bars needs a bar count",
+  })
+  .refine((action) => action.action !== "click" || action.click !== undefined, {
+    message: "click needs a mode",
   });
 
 /**
@@ -360,6 +402,7 @@ export type Waveform = z.infer<typeof WaveformSchema>;
 export type LooperLayer = z.infer<typeof LooperLayerSchema>;
 export type LooperState = z.infer<typeof LooperStateSchema>;
 export type LooperAction = z.infer<typeof LooperActionSchema>;
+export type ClickMode = z.infer<typeof ClickModeSchema>;
 export type OutputSink = z.infer<typeof OutputSinkSchema>;
 export type OutputState = z.infer<typeof OutputStateSchema>;
 

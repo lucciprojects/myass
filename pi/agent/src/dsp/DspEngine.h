@@ -36,6 +36,39 @@ public:
     void loopUndo();
     void loopPasteChain(int layer);
 
+    // Musical time. Both return false when the looper is busy, which the
+    // control server turns into `error busy`.
+    bool loopSetTempo(float bpm, int beatsPerBar);
+    bool loopSetBars(int bars);
+    void loopSetClickMode(ClickMode mode);
+
+    // Transfer. A dump copies one chunk under the lock and reports busy rather
+    // than reading a buffer that is still being recorded.
+    struct LayerDump {
+        bool busy = false;
+        std::size_t offset = 0;
+        std::size_t count = 0;
+        std::size_t total = 0;
+        std::vector<float> samples;
+    };
+    LayerDump dumpLayer(int layer, std::size_t offset, std::size_t count) const;
+
+    // A project assembled by the control thread outside the lock, then applied
+    // with one short critical section.
+    struct StagedProject {
+        LoopLoad loop;
+        EffectChain board;
+        bool setsBoard = false;
+    };
+    bool commitProject(StagedProject& staged);
+
+    // Per-layer captured chains, read and written independently of the live
+    // board.
+    std::vector<EffectSnapshot> loopChainSnapshot(int layer) const;
+    void setLoopChain(int layer, EffectChain chain);
+
+    std::size_t loopCapacitySamples() const;
+
     LooperState loopState() const;
     float loopMaxSeconds() const;
 

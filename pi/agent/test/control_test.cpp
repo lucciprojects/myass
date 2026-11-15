@@ -2,6 +2,7 @@
 // transaction can be verified on a machine with no sound card.
 
 #include "control/ControlServer.h"
+#include "control/Base64.h"
 #include "dsp/DspEngine.h"
 
 #include <arpa/inet.h>
@@ -361,15 +362,21 @@ int main() {
     check("commit clean", sendAndRead(fd, "CHAIN COMMIT"), "ok slots=0");
     check("clear all layers", sendAndRead(fd, "LOOP clear"), "ok cleared=all");
 
+    // The audio assertions in this suite compare exact samples, so the
+    // metronome — which is correct behaviour during a take — is turned off
+    // here and exercised on its own further down.
+    check("click off for exact samples", sendAndRead(fd, "LOOP click off"), "ok click=off");
+
     // Eight frames per block, with a single impulse at index 3. A loop of
     // exactly 8 frames then returns that impulse at a predictable place, which
     // a sine could not.
     constexpr int LOOP_FRAMES = 8;
     constexpr int IMPULSE_AT = 3;
 
-    // Three seconds at the default 48kHz rate. The countdown lives in the
-    // config, so the test's job is to cross it, not to know it by heart.
-    constexpr std::size_t COUNTDOWN_FRAMES = 48000 * 3;
+    // One bar at 120 BPM: 48000 * 60/120 * 4. The count-in is derived from the
+    // tempo, so the test's job is to cross one bar, not to know a constant by
+    // heart.
+    constexpr std::size_t COUNTDOWN_FRAMES = 48000 * 2;
 
     const auto feed = [&](float value) {
         std::array<float, LOOP_FRAMES> block{};
@@ -416,8 +423,8 @@ int main() {
         const LoopStateRead armed = readLoopState(fd);
         check("armed layer is waiting", field(armed.layers[0], "waiting"), "1");
         check("armed layer not yet recording", field(armed.layers[0], "recording"), "0");
-        check("countdown at full", field(armed.layers[0], "countdown"), "3.0000");
-        check("armed layer default max", field(armed.layers[0], "max"), "16.0000");
+        check("countdown at full", field(armed.layers[0], "countdown"), "2.0000");
+        check("armed layer default max", field(armed.layers[0], "max"), "32.0000");
         check("armed layer captured the live chain", field(armed.layers[0], "chain"), "1");
     }
 
@@ -426,7 +433,7 @@ int main() {
 
     {
         const LoopStateRead tick = readLoopState(fd);
-        check("countdown has moved", field(tick.layers[0], "countdown"), "2.9792");
+        check("countdown has moved", field(tick.layers[0], "countdown"), "1.9792");
         check("still waiting", field(tick.layers[0], "waiting"), "1");
     }
 
@@ -662,11 +669,22 @@ int main() {
     check("stop layer 1", sendAndRead(fd, "LOOP stop 1"), "ok stop=1");
 
     const LoopStateRead twoLayers = readLoopState(fd);
+    // Field by field rather than the whole line: the header now carries a
+    // revision counter that moves on every change, and a literal match would
+    // fail for a reason that has nothing to do with what this test checks.
+    check("two layer header layers", field(twoLayers.header, "layers"), "8");
+    check("two layer header cap", field(twoLayers.header, "max"), "32.0000");
+    check("two layer header rate", field(twoLayers.header, "rate"), "48000");
+    check("two layer header tempo", field(twoLayers.header, "bpm"), "120.0000");
+    check("two layer header meter", field(twoLayers.header, "beats"), "4");
+    check("two layer header free mode", field(twoLayers.header, "bars"), "0");
     check(
-        "two layer header",
-        twoLayers.header,
-        "ok layers=8 max=16.0000 countdown=3.0000 transport=0.0002"
+        "two layer header click",
+        field(twoLayers.header, "click"),
+        "off"
     );
+    check("two layer header countdown", field(twoLayers.header, "countdown"), "2.0000");
+    check("two layer header transport", field(twoLayers.header, "transport"), "0.0002");
     check("layer 0 is still empty", field(twoLayers.layers[0], "seconds"), "0.0000");
     check("layer 1 kept its take", field(twoLayers.layers[1], "seconds"), "0.0002");
 
@@ -690,6 +708,185 @@ int main() {
     check("loop bad max", sendAndRead(fd, "LOOP record 0 max=abc"), "error bad_value");
     check("loop zero max", sendAndRead(fd, "LOOP record 0 max=0"), "error bad_value");
     check("loop chain out of range", sendAndRead(fd, "LOOP chain 99"), "error bad_value");
+
+    // ---- tempo, bars and the click ----
+
+    // A tempo cannot move under existing audio: there is no time stretch, so
+    // the player clears first. This is a refusal, not a silent re-grid.
+    check("tempo refused with content", sendAndRead(fd, "LOOP tempo 90"), "error busy");
+
+    check("clear for tempo", sendAndRead(fd, "LOOP clear"), "ok cleared=all");
+    check(
+        "tempo accepted when empty",
+        sendAndRead(fd, "LOOP tempo 90"),
+        "ok bpm=90.0000 beats=4"
+    );
+
+    {
+        const LoopStateRead slowed = readLoopState(fd);
+        check("tempo reported", field(slowed.header, "bpm"), "90.0000");
+        // One bar at 90 BPM is four beats of 32000 samples: 2.6667s.
+        check("one bar at 90", field(slowed.header, "countdown"), "2.6667");
+    }
+
+    check("tempo out of range", sendAndRead(fd, "LOOP tempo 300"), "error bad_value");
+    check("tempo bad meter", sendAndRead(fd, "LOOP tempo 90 beats=3"), "error bad_value");
+
+    check("bars accepted", sendAndRead(fd, "LOOP bars 4"), "ok bars=4");
+
+    {
+        const LoopStateRead fourBars = readLoopState(fd);
+        check("bars reported", field(fourBars.header, "bars"), "4");
+    }
+
+    check("bars out of range", sendAndRead(fd, "LOOP bars 999"), "error bad_value");
+    // 13 bars at 90 BPM is 34.7s, past the 32s buffer.
+    check("bars beyond the cap", sendAndRead(fd, "LOOP bars 13"), "error bad_value");
+
+    // An armed take locks the grid too, otherwise its stop point would move
+    // underneath it.
+    check("record for lockout", sendAndRead(fd, "LOOP record 0"), "ok record=0");
+    advance(1);
+    check("tempo refused while armed", sendAndRead(fd, "LOOP tempo 100"), "error busy");
+    check("bars refused while armed", sendAndRead(fd, "LOOP bars 2"), "error busy");
+    check("cancel the locked take", sendAndRead(fd, "LOOP stop 0"), "ok stop=0");
+
+    const LoopStateRead beforeQuantized = readLoopState(fd);
+
+    // One bar of count-in (128000 samples at 90 BPM), then exactly four bars
+    // (512000 samples) and an automatic stop. The take defines the cycle.
+    check("record quantized take", sendAndRead(fd, "LOOP record 0"), "ok record=0");
+    advance(128000 + 512000 + 8);
+
+    {
+        const LoopStateRead quantized = readLoopState(fd);
+        check("quantized take length", field(quantized.layers[0], "samples"), "512000");
+        check("quantized take seconds", field(quantized.layers[0], "seconds"), "10.6667");
+        check("quantized take stopped itself", field(quantized.layers[0], "recording"), "0");
+        check("quantized take is playing", field(quantized.layers[0], "playing"), "1");
+        check(
+            "quantized take is not truncated",
+            field(quantized.layers[0], "truncated"),
+            "0"
+        );
+        check("quantized take set the cycle", field(quantized.header, "loop"), "512000");
+        check(
+            "quantized take set the transport",
+            field(quantized.header, "transport"),
+            "10.6667"
+        );
+        checkTrue(
+            "take bumped the layer revision",
+            std::stoull(field(quantized.layers[0], "rev")) >
+                std::stoull(field(beforeQuantized.layers[0], "rev"))
+        );
+    }
+
+    // Level changes are visible state but not audio: the layer revision stays
+    // put, so an auto-save would not dump the samples again.
+    {
+        const LoopStateRead beforeLevel = readLoopState(fd);
+        sendAndRead(fd, "LOOP level 0 50.0000");
+        const LoopStateRead afterLevel = readLoopState(fd);
+
+        check(
+            "level leaves the layer revision alone",
+            field(afterLevel.layers[0], "rev"),
+            field(beforeLevel.layers[0], "rev")
+        );
+        checkTrue(
+            "level bumps the global revision",
+            std::stoull(field(afterLevel.header, "rev")) >
+                std::stoull(field(beforeLevel.header, "rev"))
+        );
+    }
+
+    // Stopping a quantized take early discards it: the bars were chosen before
+    // arming, so a partial bar is not a loop.
+    check("clear for early stop", sendAndRead(fd, "LOOP clear"), "ok cleared=all");
+    check("record early stop", sendAndRead(fd, "LOOP record 0"), "ok record=0");
+    advance(128000 + 100);
+    check("stop early", sendAndRead(fd, "LOOP stop 0"), "ok stop=0");
+
+    {
+        const LoopStateRead discarded = readLoopState(fd);
+        check(
+            "early stop discarded the take",
+            field(discarded.layers[0], "samples"),
+            "0"
+        );
+        check(
+            "early stop left no transport",
+            field(discarded.header, "transport"),
+            "0.0000"
+        );
+    }
+
+    // FREE restores stop-defines-length, which is what the rest of this suite
+    // (and the pre-tempo UI) expects.
+    check("free mode", sendAndRead(fd, "LOOP bars 0"), "ok bars=0");
+    check("record free take", sendAndRead(fd, "LOOP record 0"), "ok record=0");
+    advance(128000);
+    feed(0.0f);
+    check("stop free take", sendAndRead(fd, "LOOP stop 0"), "ok stop=0");
+
+    {
+        const LoopStateRead free = readLoopState(fd);
+        check("free take kept its own length", field(free.layers[0], "samples"), "8");
+    }
+
+    // ---- the click ----
+
+    check("clear for click", sendAndRead(fd, "LOOP clear"), "ok cleared=all");
+    check("click off", sendAndRead(fd, "LOOP click off"), "ok click=off");
+    check("record with click off", sendAndRead(fd, "LOOP record 0"), "ok record=0");
+
+    {
+        std::array<float, 256> block{};
+        dsp.processBlock(block.data(), static_cast<int>(block.size()));
+
+        float peak = 0.0f;
+
+        for (const float sample : block) {
+            peak = std::max(peak, std::fabs(sample));
+        }
+
+        checkTrue("click off is silent during the count-in", peak == 0.0f);
+    }
+
+    check("cancel silent take", sendAndRead(fd, "LOOP stop 0"), "ok stop=0");
+
+    check(
+        "click on",
+        sendAndRead(fd, "LOOP click countin-record"),
+        "ok click=countin-record"
+    );
+    check("record with click on", sendAndRead(fd, "LOOP record 0"), "ok record=0");
+
+    {
+        std::array<float, 256> block{};
+        dsp.processBlock(block.data(), static_cast<int>(block.size()));
+
+        float peak = 0.0f;
+
+        for (const float sample : block) {
+            peak = std::max(peak, std::fabs(sample));
+        }
+
+        checkTrue("count-in clicks on the downbeat", peak > 0.1f);
+    }
+
+    check("cancel clicking take", sendAndRead(fd, "LOOP stop 0"), "ok stop=0");
+    check("clear after click", sendAndRead(fd, "LOOP clear"), "ok cleared=all");
+    check("click back off", sendAndRead(fd, "LOOP click off"), "ok click=off");
+
+    // Back to the tempo the rest of the suite assumes. 120 BPM makes a bar
+    // 96000 samples, which is what COUNTDOWN_FRAMES encodes.
+    check(
+        "restore tempo",
+        sendAndRead(fd, "LOOP tempo 120"),
+        "ok bpm=120.0000 beats=4"
+    );
 
     // ---- the max cap truncates rather than wraps ----
 
@@ -793,7 +990,593 @@ int main() {
         layerTiming.total / layerTiming.blocks < 533.0
     );
 
+    // ---- project transfer ----
+
+    std::cout << "transfer" << std::endl;
+
+    check("clear chain for transfer", sendAndRead(fd, "CHAIN RESET"), "ok staging=0");
+    check("commit clear for transfer", sendAndRead(fd, "CHAIN COMMIT"), "ok slots=0");
+    check("clear all for transfer", sendAndRead(fd, "LOOP clear"), "ok cleared=all");
+    check("tempo for transfer", sendAndRead(fd, "LOOP tempo 120"), "ok bpm=120.0000 beats=4");
+    check("bars for transfer", sendAndRead(fd, "LOOP bars 0"), "ok bars=0");
+    check("click off for transfer", sendAndRead(fd, "LOOP click off"), "ok click=off");
+
+    // A known ramp makes a dump checkable bit for bit rather than merely by
+    // length. The first sample lands at index 0 because the take starts on the
+    // block after the count-in is crossed.
+    const std::array<float, 8> RAMP{
+        {0.125f, 0.25f, 0.375f, 0.5f, 0.625f, 0.75f, 0.875f, 1.0f}
+    };
+
+    check("record for dump", sendAndRead(fd, "LOOP record 0"), "ok record=0");
+    advance(COUNTDOWN_FRAMES);
+
+    {
+        std::array<float, 8> take = RAMP;
+        dsp.processBlock(take.data(), static_cast<int>(take.size()));
+    }
+
+    check("stop for dump", sendAndRead(fd, "LOOP stop 0"), "ok stop=0");
+
+    {
+        const std::string reply = sendAndRead(fd, "LOOP dump 0 0 8");
+        check("dump offset", field(reply, "offset"), "0");
+        check("dump count", field(reply, "count"), "8");
+        check("dump total", field(reply, "total"), "8");
+
+        std::vector<float> dumped;
+        checkTrue("dump base64 decoded", decodePcm(field(reply, "data"), dumped));
+        checkTrue("dump length", dumped.size() == RAMP.size());
+
+        bool exact = dumped.size() == RAMP.size();
+
+        for (std::size_t index = 0; exact && index < RAMP.size(); ++index) {
+            exact = dumped[index] == RAMP[index];
+        }
+
+        checkTrue("dump is bit exact", exact);
+    }
+
+    {
+        const std::string reply = sendAndRead(fd, "LOOP dump 0 3 3");
+        check("partial dump offset", field(reply, "offset"), "3");
+        check("partial dump count", field(reply, "count"), "3");
+
+        std::vector<float> dumped;
+        checkTrue("partial dump decoded", decodePcm(field(reply, "data"), dumped));
+        checkTrue(
+            "partial dump starts at index 3",
+            dumped.size() == 3 && dumped[0] == RAMP[3] &&
+                dumped[2] == RAMP[5]
+        );
+    }
+
+    {
+        const std::string reply = sendAndRead(fd, "LOOP dump 0 8 4");
+        check("past end count", field(reply, "count"), "0");
+        check("past end total", field(reply, "total"), "8");
+        check("past end empty data", field(reply, "data"), "");
+    }
+
+    check("dump over the chunk cap", sendAndRead(fd, "LOOP dump 0 0 9000"), "error bad_value");
+    check("dump with a negative offset", sendAndRead(fd, "LOOP dump 0 -1 1"), "error bad_value");
+    check("dump with a bad layer", sendAndRead(fd, "LOOP dump 99 0 1"), "error bad_value");
+
+    check("arm layer 1 for busy dump", sendAndRead(fd, "LOOP record 1"), "ok record=1");
+    check("dump while armed is busy", sendAndRead(fd, "LOOP dump 1 0 8"), "error busy");
+    check("cancel the busy dump take", sendAndRead(fd, "LOOP stop 1"), "ok stop=1");
+
+    // ---- aborting a staged load ----
+
+    const LoopStateRead beforeAbort = readLoopState(fd);
+
+    check("abort begin", sendAndRead(fd, "PROJECT LOAD BEGIN"), "ok staged=1");
+    check(
+        "abort layer begin",
+        sendAndRead(fd, "PROJECT LOAD LAYER 0 BEGIN 8"),
+        "ok layer=0 samples=8"
+    );
+    check(
+        "abort layer data",
+        sendAndRead(
+            fd,
+            "PROJECT LOAD LAYER 0 DATA 0 " + encodePcm(RAMP.data(), RAMP.size())
+        ),
+        "ok offset=0 count=8"
+    );
+    check("abort session", sendAndRead(fd, "PROJECT LOAD ABORT"), "ok aborted=1");
+
+    {
+        const LoopStateRead afterAbort = readLoopState(fd);
+        check(
+            "abort leaves the revision",
+            field(afterAbort.header, "rev"),
+            field(beforeAbort.header, "rev")
+        );
+        check(
+            "abort leaves the length",
+            field(afterAbort.layers[0], "samples"),
+            field(beforeAbort.layers[0], "samples")
+        );
+    }
+
+    check(
+        "commit after abort is refused",
+        sendAndRead(
+            fd,
+            "PROJECT LOAD COMMIT bpm=120.0000 beats=4 bars=0 click=off loop=8"
+        ),
+        "error bad_request"
+    );
+
+    // A chunk that runs past the length the layer was begun with aborts the
+    // session rather than leaving a short layer for COMMIT to reject.
+    check("bad chunk begin", sendAndRead(fd, "PROJECT LOAD BEGIN"), "ok staged=1");
+    check(
+        "bad chunk layer",
+        sendAndRead(fd, "PROJECT LOAD LAYER 0 BEGIN 4"),
+        "ok layer=0 samples=4"
+    );
+    check(
+        "overlong chunk aborts",
+        sendAndRead(
+            fd,
+            "PROJECT LOAD LAYER 0 DATA 2 " + encodePcm(RAMP.data(), 3)
+        ),
+        "error bad_value"
+    );
+    check(
+        "commit after a bad chunk is refused",
+        sendAndRead(
+            fd,
+            "PROJECT LOAD COMMIT bpm=120.0000 beats=4 bars=0 click=off loop=4"
+        ),
+        "error bad_request"
+    );
+
+    check("bad base64 begin", sendAndRead(fd, "PROJECT LOAD BEGIN"), "ok staged=1");
+    check(
+        "bad base64 layer",
+        sendAndRead(fd, "PROJECT LOAD LAYER 0 BEGIN 4"),
+        "ok layer=0 samples=4"
+    );
+    check(
+        "bad base64 aborts",
+        sendAndRead(fd, "PROJECT LOAD LAYER 0 DATA 0 !!!!"),
+        "error bad_value"
+    );
+
+    {
+        const LoopStateRead afterBad = readLoopState(fd);
+        check(
+            "a failed load leaves the length",
+            field(afterBad.layers[0], "samples"),
+            field(beforeAbort.layers[0], "samples")
+        );
+        check(
+            "a failed load leaves the revision",
+            field(afterBad.header, "rev"),
+            field(beforeAbort.header, "rev")
+        );
+    }
+
+    // ---- a two layer project load ----
+
+    const std::array<float, 4> LOAD_A{{0.1f, 0.2f, 0.3f, 0.4f}};
+    const std::array<float, 4> LOAD_B{{-0.5f, -0.25f, 0.25f, 0.5f}};
+
+    check("load begin", sendAndRead(fd, "PROJECT LOAD BEGIN"), "ok staged=1");
+
+    check(
+        "load layer 0 begin",
+        sendAndRead(fd, "PROJECT LOAD LAYER 0 BEGIN 4"),
+        "ok layer=0 samples=4"
+    );
+    check(
+        "load layer 0 data",
+        sendAndRead(
+            fd,
+            "PROJECT LOAD LAYER 0 DATA 0 " +
+                encodePcm(LOAD_A.data(), LOAD_A.size())
+        ),
+        "ok offset=0 count=4"
+    );
+    check(
+        "load layer 0 meta",
+        sendAndRead(
+            fd,
+            "PROJECT LOAD LAYER 0 META level=80.0000 muted=0 playing=1 truncated=0"
+        ),
+        "ok layer=0"
+    );
+
+    check("load chain 0 reset", sendAndRead(fd, "PROJECT CHAIN RESET"), "ok staging=0");
+    check(
+        "load chain 0 slot",
+        sendAndRead(
+            fd,
+            "PROJECT CHAIN SLOT 0 kind=gain enabled=1 gain=2.0000 mix=100.0000"
+        ),
+        "ok slot=0"
+    );
+    check("load chain 0 commit", sendAndRead(fd, "PROJECT CHAIN COMMIT 0"), "ok chain=0");
+
+    check(
+        "load layer 1 begin",
+        sendAndRead(fd, "PROJECT LOAD LAYER 1 BEGIN 4"),
+        "ok layer=1 samples=4"
+    );
+    check(
+        "load layer 1 data",
+        sendAndRead(
+            fd,
+            "PROJECT LOAD LAYER 1 DATA 0 " +
+                encodePcm(LOAD_B.data(), LOAD_B.size())
+        ),
+        "ok offset=0 count=4"
+    );
+    check(
+        "load layer 1 meta",
+        sendAndRead(
+            fd,
+            "PROJECT LOAD LAYER 1 META level=50.0000 muted=1 playing=0 truncated=1"
+        ),
+        "ok layer=1"
+    );
+
+    // The board travels with the project but is applied at the same commit as
+    // the audio, never while the load is still being staged.
+    check("load board reset", sendAndRead(fd, "PROJECT BOARD RESET"), "ok staging=0");
+    check(
+        "load board slot",
+        sendAndRead(
+            fd,
+            "PROJECT BOARD SLOT 0 kind=gain enabled=1 gain=2.0000 mix=100.0000"
+        ),
+        "ok slot=0"
+    );
+    check("load board commit", sendAndRead(fd, "PROJECT BOARD COMMIT"), "ok slots=1");
+
+    check(
+        "load commit",
+        sendAndRead(
+            fd,
+            "PROJECT LOAD COMMIT bpm=100.0000 beats=4 bars=0 click=off loop=4"
+        ),
+        "ok loaded=2"
+    );
+
+    {
+        const LoopStateRead loaded = readLoopState(fd);
+
+        check("loaded bpm", field(loaded.header, "bpm"), "100.0000");
+        check("loaded beats", field(loaded.header, "beats"), "4");
+        check("loaded bars", field(loaded.header, "bars"), "0");
+        check("loaded click", field(loaded.header, "click"), "off");
+        check("loaded loop", field(loaded.header, "loop"), "4");
+        check("load lands paused", field(loaded.header, "paused"), "1");
+
+        check("loaded layer 0 samples", field(loaded.layers[0], "samples"), "4");
+        check("loaded layer 0 level", field(loaded.layers[0], "level"), "80.0000");
+        check("loaded layer 0 playing", field(loaded.layers[0], "playing"), "1");
+        check("loaded layer 0 muted", field(loaded.layers[0], "muted"), "0");
+        check("loaded layer 0 chain matches the board", field(loaded.layers[0], "chain"), "1");
+
+        check("loaded layer 1 samples", field(loaded.layers[1], "samples"), "4");
+        check("loaded layer 1 level", field(loaded.layers[1], "level"), "50.0000");
+        check("loaded layer 1 playing", field(loaded.layers[1], "playing"), "0");
+        check("loaded layer 1 muted", field(loaded.layers[1], "muted"), "1");
+        check("loaded layer 1 truncated", field(loaded.layers[1], "truncated"), "1");
+        check("loaded layer 1 chain differs", field(loaded.layers[1], "chain"), "0");
+    }
+
+    {
+        const std::string header = sendAndRead(fd, "CHAIN GET layer=0");
+        check("layer 0 chain header", header, "ok slots=1");
+        check(
+            "layer 0 chain slot",
+            readLine(fd),
+            "slot 0 kind=gain enabled=1 gain=2.0000 mix=100.0000"
+        );
+        check("layer 0 chain terminator", readLine(fd), "end");
+    }
+
+    {
+        const std::string header = sendAndRead(fd, "CHAIN GET layer=2");
+        check("empty layer chain header", header, "ok slots=0");
+        check("empty layer chain terminator", readLine(fd), "end");
+    }
+
+    // Restoring is deliberate, so the rig stays silent until the player
+    // resumes; then layer 0 plays its saved audio through its saved gain and
+    // layer 1 stays out because it was saved stopped and muted.
+    {
+        std::array<float, 2> silent{{0.0f, 0.0f}};
+        dsp.processBlock(silent.data(), 2);
+        checkTrue(
+            "loaded rig is silent while paused",
+            silent[0] == 0.0f && silent[1] == 0.0f
+        );
+    }
+
+    check("resume after load", sendAndRead(fd, "LOOP play"), "ok play=all");
+
+    {
+        std::array<float, 2> block{{0.0f, 0.0f}};
+        dsp.processBlock(block.data(), 2);
+
+        // Chain first, then the layer level, exactly as the audio path does.
+        const float first = LOAD_A[0] * 2.0f * 0.8f;
+        const float second = LOAD_A[1] * 2.0f * 0.8f;
+
+        checkTrue(
+            "loaded layer 0 plays sample 0",
+            std::fabs(block[0] - first) < 1e-6f
+        );
+        checkTrue(
+            "loaded layer 0 plays sample 1",
+            std::fabs(block[1] - second) < 1e-6f
+        );
+    }
+
+    // ---- a layer chain never touches the live board ----
+
+    const auto liveBoard = dsp.snapshot();
+
+    check("layer chain reset", sendAndRead(fd, "CHAIN RESET"), "ok staging=0");
+    check(
+        "layer chain stage",
+        sendAndRead(
+            fd,
+            "SLOT 0 kind=overdrive enabled=1 drive=4.0000 mix=80.0000"
+        ),
+        "ok slot=0"
+    );
+    check("layer chain commit", sendAndRead(fd, "CHAIN COMMIT layer=2"), "ok chain=2");
+
+    {
+        const auto after = dsp.snapshot();
+
+        checkTrue("layer chain leaves the board size", after.size() == liveBoard.size());
+
+        bool same = after.size() == liveBoard.size();
+
+        for (std::size_t index = 0; same && index < after.size(); ++index) {
+            same = after[index].kind == liveBoard[index].kind &&
+                after[index].enabled == liveBoard[index].enabled &&
+                after[index].params == liveBoard[index].params;
+        }
+
+        checkTrue("layer chain leaves the board identity", same);
+    }
+
+    {
+        const std::string header = sendAndRead(fd, "CHAIN GET layer=2");
+        check("layer 2 chain header", header, "ok slots=1");
+        check(
+            "layer 2 chain slot",
+            readLine(fd),
+            "slot 0 kind=overdrive enabled=1 drive=4.0000 mix=80.0000"
+        );
+        check("layer 2 chain terminator", readLine(fd), "end");
+    }
+
+    {
+        const std::string header = sendAndRead(fd, "CHAIN GET");
+        check("live chain still readable", header, "ok slots=1");
+        check(
+            "live chain is still the loaded board",
+            readLine(fd),
+            "slot 0 kind=gain enabled=1 gain=2.0000 mix=100.0000"
+        );
+        check("live chain terminator", readLine(fd), "end");
+    }
+
+    // ---- the private render chain ----
+
+    check("arm layer 3 for render busy", sendAndRead(fd, "LOOP record 3"), "ok record=3");
+    check("render refuses an active take", sendAndRead(fd, "RENDER BEGIN"), "error busy");
+    check("cancel the render busy take", sendAndRead(fd, "LOOP stop 3"), "ok stop=3");
+
+    const std::array<float, 4> RENDER_IN{{0.1f, 0.2f, 0.3f, 0.4f}};
+
+    check("render begin", sendAndRead(fd, "RENDER BEGIN"), "ok render=1");
+    check("render reset", sendAndRead(fd, "RENDER RESET"), "ok staging=0");
+    check(
+        "render gain slot",
+        sendAndRead(
+            fd,
+            "RENDER SLOT 0 kind=gain enabled=1 gain=2.0000 mix=100.0000"
+        ),
+        "ok slot=0"
+    );
+    check("render commit", sendAndRead(fd, "RENDER COMMIT"), "ok slots=1");
+
+    std::vector<float> rendered;
+
+    {
+        const std::string reply = sendAndRead(
+            fd,
+            "RENDER DATA " + encodePcm(RENDER_IN.data(), 2)
+        );
+        check("render first chunk count", field(reply, "count"), "2");
+
+        std::vector<float> chunk;
+        checkTrue("render first chunk decoded", decodePcm(field(reply, "data"), chunk));
+        rendered.insert(rendered.end(), chunk.begin(), chunk.end());
+    }
+
+    {
+        const std::string reply = sendAndRead(
+            fd,
+            "RENDER DATA " + encodePcm(RENDER_IN.data() + 2, 2)
+        );
+        check("render second chunk count", field(reply, "count"), "2");
+
+        std::vector<float> chunk;
+        checkTrue("render second chunk decoded", decodePcm(field(reply, "data"), chunk));
+        rendered.insert(rendered.end(), chunk.begin(), chunk.end());
+    }
+
+    checkTrue(
+        "render gain split across chunks is exact",
+        rendered.size() == 4 &&
+            std::fabs(rendered[0] - 0.2f) < 1e-6f &&
+            std::fabs(rendered[1] - 0.4f) < 1e-6f &&
+            std::fabs(rendered[2] - 0.6f) < 1e-6f &&
+            std::fabs(rendered[3] - 0.8f) < 1e-6f
+    );
+
+    check("render end", sendAndRead(fd, "RENDER END"), "ok render=0");
+
+    // A stateful effect must see one continuous signal across chunks. A
+    // downsample of four holds every fourth input; splitting the same six
+    // samples into two calls has to produce the same held value as one call.
+    const std::array<float, 6> STATE_IN{{0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f}};
+
+    const auto renderStateful = [&](bool split) {
+        const std::string suffix = split ? " split" : " whole";
+
+        check(
+            "stateful begin" + suffix,
+            sendAndRead(fd, "RENDER BEGIN"),
+            "ok render=1"
+        );
+        check(
+            "stateful reset" + suffix,
+            sendAndRead(fd, "RENDER RESET"),
+            "ok staging=0"
+        );
+        check(
+            "stateful slot" + suffix,
+            sendAndRead(
+                fd,
+                "RENDER SLOT 0 kind=downsample enabled=1 divisor=4.0000 mix=100.0000"
+            ),
+            "ok slot=0"
+        );
+        check(
+            "stateful commit" + suffix,
+            sendAndRead(fd, "RENDER COMMIT"),
+            "ok slots=1"
+        );
+
+        std::vector<float> result;
+
+        if (split) {
+            for (std::size_t offset = 0; offset < STATE_IN.size(); offset += 3) {
+                const std::size_t count =
+                    std::min<std::size_t>(3, STATE_IN.size() - offset);
+                const std::string reply = sendAndRead(
+                    fd,
+                    "RENDER DATA " +
+                        encodePcm(STATE_IN.data() + offset, count)
+                );
+
+                std::vector<float> chunk;
+                checkTrue(
+                    "stateful chunk decoded" + suffix,
+                    decodePcm(field(reply, "data"), chunk)
+                );
+                result.insert(result.end(), chunk.begin(), chunk.end());
+            }
+        } else {
+            const std::string reply = sendAndRead(
+                fd,
+                "RENDER DATA " +
+                    encodePcm(STATE_IN.data(), STATE_IN.size())
+            );
+
+            checkTrue(
+                "stateful chunk decoded" + suffix,
+                decodePcm(field(reply, "data"), result)
+            );
+        }
+
+        check(
+            "stateful end" + suffix,
+            sendAndRead(fd, "RENDER END"),
+            "ok render=0"
+        );
+
+        return result;
+    };
+
+    const std::vector<float> stateWhole = renderStateful(false);
+    const std::vector<float> stateSplit = renderStateful(true);
+
+    checkTrue("stateful whole length", stateWhole.size() == STATE_IN.size());
+    checkTrue("stateful split length", stateSplit.size() == STATE_IN.size());
+    checkTrue(
+        "stateful render is chunk independent",
+        stateWhole.size() == stateSplit.size() &&
+            std::equal(stateWhole.begin(), stateWhole.end(), stateSplit.begin())
+    );
+    checkTrue(
+        "stateful render carried the held value across the split",
+        stateSplit.size() == STATE_IN.size() &&
+            std::fabs(stateSplit[3] - STATE_IN[3]) < 1e-6f
+    );
+
+    // ---- a half staged load and the line cap survive a reconnect ----
+
+    check("stage before disconnect", sendAndRead(fd, "PROJECT LOAD BEGIN"), "ok staged=1");
+    check(
+        "layer before disconnect",
+        sendAndRead(fd, "PROJECT LOAD LAYER 0 BEGIN 4"),
+        "ok layer=0 samples=4"
+    );
+
     ::close(fd);
+
+    const int reconnectFd = connectToAgent();
+    checkTrue("reconnected after transfer", reconnectFd >= 0);
+
+    if (reconnectFd >= 0) {
+        check(
+            "a staged load does not survive the disconnect",
+            sendAndRead(
+                reconnectFd,
+                "PROJECT LOAD COMMIT bpm=120.0000 beats=4 bars=0 click=off loop=4"
+            ),
+            "error bad_request"
+        );
+
+        // One byte past the cap is enough: the whole line fits in the socket
+        // buffer, so the server can read it all before replying and closing.
+        const std::string huge(131072 + 1, 'A');
+        std::size_t sent = 0;
+
+        while (sent < huge.size()) {
+            const ssize_t written = ::send(
+                reconnectFd,
+                huge.data() + sent,
+                huge.size() - sent,
+                MSG_NOSIGNAL
+            );
+
+            if (written <= 0) {
+                break;
+            }
+
+            sent += static_cast<std::size_t>(written);
+        }
+
+        check("oversized line is rejected", readLine(reconnectFd), "error line_too_long");
+        ::close(reconnectFd);
+    }
+
+    {
+        const int finalFd = connectToAgent();
+
+        if (finalFd < 0) {
+            checkTrue("reconnected after an oversized line", false);
+        } else {
+            check("ping after the session reset", sendAndRead(finalFd, "PING"), "ok pong");
+            ::close(finalFd);
+        }
+    }
+
     server.stop();
 
     std::cout << (failures == 0 ? "\nall checks passed\n" : "\nFAILURES\n") << std::endl;
