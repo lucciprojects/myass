@@ -540,13 +540,19 @@ export function LooperPanel({
   const queryClient = useQueryClient();
   const [failure, setFailure] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   const levelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingLevel = useRef<LooperAction | null>(null);
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const query = useQuery({
     queryKey: QUERY_KEY,
     queryFn: getLooper,
+    enabled: mounted,
     retry: 1,
     // An idle rig costs nothing. Polling only runs while something is moving:
     // a countdown, a take, or a playing loop.

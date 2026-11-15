@@ -52,10 +52,16 @@ function OutputKey() {
   const queryClient = useQueryClient();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const { geometry, setGeometry, open, toggle } = useDropMenu(triggerRef);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const query = useQuery({
-    queryKey: ["output"],
+    queryKey: queryKeys.output,
     queryFn: getOutput,
+    enabled: mounted,
     retry: 1,
   });
 

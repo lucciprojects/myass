@@ -17,9 +17,9 @@ import {
 } from "@myass/protocol";
 import {
   AgentUnavailableError,
-  type ControlClient,
-  type ProjectPayload,
+  ControlClient,
 } from "../agent/control.client.js";
+import type { ProjectPayload } from "../agent/control.client.js";
 import {
   emptyManifest,
   InvalidProjectError,

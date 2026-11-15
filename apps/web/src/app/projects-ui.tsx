@@ -672,10 +672,16 @@ export function ProjectsSection({
   const [dialog, setDialog] = useState<DialogMode>(null);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const projectsQuery = useQuery({
     queryKey: queryKeys.projects,
     queryFn: listProjects,
+    enabled: mounted,
     retry: 1,
   });
 

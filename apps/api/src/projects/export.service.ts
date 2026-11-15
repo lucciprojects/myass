@@ -11,7 +11,7 @@ import {
   type FlExportManifest,
   type ProjectExportKind,
 } from "@myass/protocol";
-import type { ControlClient } from "../agent/control.client.js";
+import { ControlClient } from "../agent/control.client.js";
 import { fileEntry } from "../zip/file-entry.js";
 import { writeZip, type ZipEntrySource } from "../zip/zip-writer.js";
 import { BundleService } from "./bundle.service.js";
