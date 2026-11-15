@@ -256,6 +256,12 @@ export class ProjectsService implements OnModuleInit, OnModuleDestroy {
       layers,
       revision: state.revision,
       sizeBytes: 0,
+      // A cleared session is no longer the project it came from. Dropping the
+      // link here keeps "unsaved changes" from sticking to an empty working
+      // session forever after CLEAR ALL.
+      linkedProjectId: active.length === 0 ? null : base.linkedProjectId,
+      linkedRevision:
+        active.length === 0 ? 0 : base.linkedRevision,
     };
 
     const summary = await this.store.write({ manifest, layers: audio });
@@ -276,7 +282,10 @@ export class ProjectsService implements OnModuleInit, OnModuleDestroy {
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
       busy: this.queue.busy(),
       status: this.control.isConnected() ? this.status : "agentOffline",
-      dirty: working ? working.revision !== working.linkedRevision : false,
+      dirty: working
+        ? working.linkedProjectId !== null &&
+          working.revision !== working.linkedRevision
+        : false,
       linkedProjectId: working?.linkedProjectId ?? null,
     };
   }

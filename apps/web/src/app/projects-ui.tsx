@@ -397,7 +397,11 @@ export function ProjectDialogs({
   const busy = projects?.busy != null;
   const recording =
     state?.layers.some((layer) => layer.recording || layer.waiting) ?? false;
-  const loadDisabled = busy || recording || (projects?.dirty ?? false);
+  const loadDisabled =
+    busy ||
+    recording ||
+    projects?.status === "saving" ||
+    projects?.status === "agentOffline";
 
   const sortedProjects = projects
     ? [projects.working, ...projects.projects.slice().sort((a, b) =>
@@ -468,7 +472,7 @@ export function ProjectDialogs({
                         title={
                           loadDisabled
                             ? "Finish or save the current take first"
-                            : undefined
+                            : `Load ${project.name} and replace the working session`
                         }
                       >
                         LOAD
