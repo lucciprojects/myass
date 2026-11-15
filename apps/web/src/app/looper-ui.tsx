@@ -4,7 +4,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { LooperAction, LooperLayer, LooperState } from "@myass/protocol";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { getLooper, postLooper } from "./api-client";
+import { getLooper, postLooper, setBars, setClick, setTempo } from "./api-client";
+import { ProjectsSection } from "./projects-ui";
+import { queryKeys } from "./queries";
 import styles from "./looper.module.css";
 
 // The playhead and a countdown move continuously, so state has to be polled
@@ -22,7 +24,7 @@ const LEVEL_DEBOUNCE_MS = 120;
 // global cap, so 16 is only a default; a boot take can stop shorter by hand.
 const MAX_OPTIONS = [2, 4, 8, 16];
 
-const QUERY_KEY = ["looper"] as const;
+const QUERY_KEY = queryKeys.looper;
 
 function formatSeconds(value: number): string {
   return `${value.toFixed(2)}s`;
@@ -207,14 +209,22 @@ function LayerRow({
   layer,
   maxSeconds,
   paused,
+  bpm,
+  bars,
   onAction,
 }: {
   layer: LooperLayer;
   maxSeconds: number;
   paused: boolean;
+  bpm: number;
+  bars: number;
   onAction: (action: LooperAction) => void;
 }) {
-  const status = statusOf(layer);
+  const status = layer.waiting
+    ? { text: "ARMED - 1/4", tone: styles.statusWarn }
+    : layer.recording
+      ? { text: `REC - ${Math.min(bars || 1, Math.floor(layer.position / Math.max(0.001, (60 * 4) / bpm)) + 1)}/${bars || 1}`, tone: styles.statusRec }
+      : statusOf(layer);
   const empty = layer.seconds === 0 && !layer.recording && !layer.waiting;
 
   // What the next record on this row will use. Held locally so picking a length
@@ -314,6 +324,17 @@ function LayerRow({
       ? { label: "CANCEL", action: "stop" as const, tone: styles.actionCancel }
       : { label: "REC", action: "record" as const, tone: "" };
 
+  const barSeconds = Math.max(0.001, (60 * 4) / bpm);
+  const recordingBar =
+    layer.recording && bars > 0
+      ? Math.min(bars, Math.floor(layer.position / barSeconds) + 1)
+      : null;
+  const remainingBeats = Math.max(
+    1,
+    Math.ceil(layer.countdown / Math.max(0.001, 60 / bpm)),
+  );
+  const filledBeats = Math.max(0, Math.min(4, 4 - remainingBeats));
+
   return (
     <div
       className={[
@@ -346,7 +367,11 @@ function LayerRow({
       </div>
 
       <span className={styles.length}>
-        {layer.seconds > 0 ? formatSeconds(layer.seconds) : "—"}
+        {recordingBar !== null
+          ? `bar ${recordingBar}/${bars}`
+          : layer.seconds > 0
+            ? formatSeconds(layer.seconds)
+            : "—"}
       </span>
 
       <span className={[styles.status, status.tone].join(" ")}>
@@ -354,8 +379,18 @@ function LayerRow({
       </span>
 
       {layer.waiting && (
-        <span className={styles.countdown} aria-label="Recording countdown">
-          {countdownTick(layer.countdown)}
+        <span className={styles.countdownDots} aria-label="Recording countdown">
+          {Array.from({ length: 4 }, (_, index) => (
+            <span
+              key={index}
+              className={[
+                styles.beatDot,
+                index < filledBeats ? styles.beatDotFilled : "",
+                index === 0 ? styles.beatDotAccent : "",
+              ].join(" ")}
+            />
+          ))}
+          <span className={styles.countdownLabel}>1 bar count-in</span>
         </span>
       )}
 
@@ -497,9 +532,14 @@ function LayerRow({
   );
 }
 
-export function LooperPanel() {
+export function LooperPanel({
+  onCancelPendingApply,
+}: {
+  onCancelPendingApply?: () => void;
+}) {
   const queryClient = useQueryClient();
   const [failure, setFailure] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const levelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingLevel = useRef<LooperAction | null>(null);
@@ -545,6 +585,43 @@ export function LooperPanel() {
     onError: (error) => {
       setFailure(error instanceof Error ? error.message : String(error));
       // Put the truth back rather than leaving an optimistic lie on screen.
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+    },
+  });
+
+  const tempoMutation = useMutation({
+    mutationFn: ({ bpm, beats }: { bpm: number; beats: number }) =>
+      setTempo(bpm, beats),
+    onSuccess: (state) => {
+      setFailure(null);
+      queryClient.setQueryData(QUERY_KEY, state);
+    },
+    onError: (error) => {
+      setFailure(error instanceof Error ? error.message : String(error));
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+    },
+  });
+
+  const barsMutation = useMutation({
+    mutationFn: (bars: number) => setBars(bars),
+    onSuccess: (state) => {
+      setFailure(null);
+      queryClient.setQueryData(QUERY_KEY, state);
+    },
+    onError: (error) => {
+      setFailure(error instanceof Error ? error.message : String(error));
+      void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+    },
+  });
+
+  const clickMutation = useMutation({
+    mutationFn: (mode: "off" | "countin" | "countin-record") => setClick(mode),
+    onSuccess: (state) => {
+      setFailure(null);
+      queryClient.setQueryData(QUERY_KEY, state);
+    },
+    onError: (error) => {
+      setFailure(error instanceof Error ? error.message : String(error));
       void queryClient.invalidateQueries({ queryKey: QUERY_KEY });
     },
   });
@@ -603,8 +680,46 @@ export function LooperPanel() {
       ? `recording in ${countdownTick(waiting.countdown)}s`
       : "layers play through the chain they were recorded with";
 
+  const locked =
+    !!state &&
+    state.layers.some((layer) => layer.seconds > 0 || layer.recording || layer.waiting);
+
+  const barSeconds = state
+    ? (state.sampleRate * 60 * state.beatsPerBar) / state.bpm
+    : 96000;
+  const maxBars = state ? Math.floor((32 * 48000) / barSeconds) : 16;
+  const barOptions = [0, 1, 2, 4, 8, 16].filter(
+    (value) => value === 0 || value <= maxBars,
+  );
+
+  const [bpmInput, setBpmInput] = useState("");
+
+  useEffect(() => {
+    if (state) {
+      setBpmInput(String(state.bpm));
+    }
+  }, [state?.bpm]);
+
+  function commitBpm() {
+    const value = Number(bpmInput);
+
+    if (!Number.isFinite(value)) {
+      setBpmInput(String(state?.bpm ?? 120));
+      return;
+    }
+
+    const clamped = Math.min(240, Math.max(40, Math.round(value)));
+
+    tempoMutation.mutate({ bpm: clamped, beats: state?.beatsPerBar ?? 4 });
+  }
+
   return (
     <section className={styles.panel}>
+      <ProjectsSection
+        state={state}
+        onCancelPendingApply={onCancelPendingApply}
+      />
+
       <div className={styles.header}>
         <h2 className={styles.headerTitle}>LOOPER</h2>
         <span className={styles.headerMeta}>
@@ -622,6 +737,78 @@ export function LooperPanel() {
         <span className={styles.headerSpacer} />
 
         {mutation.isPending && <span className={styles.headerMeta}>…</span>}
+      </div>
+
+      <div className={styles.tempoRow}>
+        <label className={styles.tempoField}>
+          <span className={styles.tempoLabel}>BPM</span>
+          <input
+            className={styles.tempoInput}
+            type="number"
+            min={40}
+            max={240}
+            value={bpmInput}
+            disabled={locked || tempoMutation.isPending}
+            title={locked ? "Clear all layers to change tempo" : undefined}
+            onChange={(event) => setBpmInput(event.target.value)}
+            onBlur={commitBpm}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                commitBpm();
+              }
+            }}
+            aria-label="Tempo in beats per minute"
+            aria-describedby={locked ? "tempo-lock" : undefined}
+          />
+        </label>
+
+        <span className={styles.meterLabel} title="3/4 meter comes later">
+          4/4
+        </span>
+
+        <label className={styles.tempoField}>
+          <span className={styles.tempoLabel}>Bars</span>
+          <select
+            className={styles.tempoSelect}
+            value={state?.bars ?? 0}
+            disabled={locked || barsMutation.isPending}
+            title={locked ? "Clear all layers to change tempo" : undefined}
+            onChange={(event) => barsMutation.mutate(Number(event.target.value))}
+            aria-label="Loop length in bars"
+          >
+            {barOptions.map((value) => (
+              <option key={value} value={value}>
+                {value === 0 ? "FREE" : value}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className={styles.tempoField}>
+          <span className={styles.tempoLabel}>Click</span>
+          <select
+            className={styles.tempoSelect}
+            value={state?.click ?? "countin-record"}
+            disabled={locked || clickMutation.isPending}
+            title={locked ? "Clear all layers to change tempo" : undefined}
+            onChange={(event) =>
+              clickMutation.mutate(
+                event.target.value as "off" | "countin" | "countin-record",
+              )
+            }
+            aria-label="Metronome click mode"
+          >
+            <option value="off">Off</option>
+            <option value="countin">Count-in</option>
+            <option value="countin-record">Count-in + recording</option>
+          </select>
+        </label>
+
+        {locked && (
+          <span id="tempo-lock" className={styles.lockNote}>
+            Clear all layers to change tempo
+          </span>
+        )}
       </div>
 
       <div className={styles.transport}>
@@ -673,6 +860,8 @@ export function LooperPanel() {
               layer={layer}
               maxSeconds={state.maxSeconds}
               paused={paused}
+              bpm={state.bpm}
+              bars={state.bars}
               onAction={send}
             />
           ))}
@@ -688,6 +877,12 @@ export function LooperPanel() {
       ) : failure ? (
         <p className={styles.failure} role="alert">{failure}</p>
       ) : null}
+
+      {statusMessage && (
+        <p className={styles.failure} role="status" aria-live="polite">
+          {statusMessage}
+        </p>
+      )}
     </section>
   );
 }

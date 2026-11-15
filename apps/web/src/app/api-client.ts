@@ -2,11 +2,16 @@ import {
   ChainSchema,
   LooperStateSchema,
   OutputStateSchema,
+  ProjectListSchema,
+  ProjectLoadResultSchema,
+  ProjectSummarySchema,
   type Chain,
   type EffectSlot,
   type LooperAction,
   type LooperState,
   type OutputState,
+  type ProjectList,
+  type ProjectSummary,
 } from "@myass/protocol";
 
 /**
@@ -125,4 +130,120 @@ export async function routeOutput(node: string): Promise<OutputState> {
   }
 
   return OutputStateSchema.parse(await response.json());
+}
+
+export async function listProjects(): Promise<ProjectList> {
+  const response = await fetch(`${apiUrl}/projects`);
+
+  if (!response.ok) {
+    throw new Error(await describeFailure("list projects", response));
+  }
+
+  return ProjectListSchema.parse(await response.json());
+}
+
+export async function saveAsProject(name: string): Promise<ProjectSummary> {
+  const response = await fetch(`${apiUrl}/projects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await describeFailure("save as", response));
+  }
+
+  return ProjectSummarySchema.parse(await response.json());
+}
+
+export async function saveProject(id: string): Promise<ProjectSummary> {
+  const response = await fetch(`${apiUrl}/projects/${encodeURIComponent(id)}/save`, {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(await describeFailure("save project", response));
+  }
+
+  return ProjectSummarySchema.parse(await response.json());
+}
+
+export async function loadProject(
+  id: string,
+): Promise<{ state: LooperState }> {
+  const response = await fetch(`${apiUrl}/projects/${encodeURIComponent(id)}/load`, {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error(await describeFailure("load project", response));
+  }
+
+  const parsed = ProjectLoadResultSchema.parse(await response.json());
+
+  return { state: parsed.state };
+}
+
+export async function renameProject(
+  id: string,
+  name: string,
+): Promise<ProjectSummary> {
+  const response = await fetch(`${apiUrl}/projects/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await describeFailure("rename project", response));
+  }
+
+  return ProjectSummarySchema.parse(await response.json());
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  const response = await fetch(`${apiUrl}/projects/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    throw new Error(await describeFailure("delete project", response));
+  }
+}
+
+export async function importProject(file: File): Promise<ProjectSummary> {
+  const response = await fetch(`${apiUrl}/projects/import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/zip" },
+    body: file,
+  });
+
+  if (!response.ok) {
+    throw new Error(await describeFailure("import project", response));
+  }
+
+  const body = (await response.json()) as { project: unknown };
+
+  return ProjectSummarySchema.parse(body.project);
+}
+
+export function exportUrl(id: string, kind: "fl" | "bundle"): string {
+  return `${apiUrl}/projects/${encodeURIComponent(id)}/export?kind=${kind}`;
+}
+
+export async function setTempo(
+  bpm: number,
+  beatsPerBar: number,
+): Promise<LooperState> {
+  return postLooper({ action: "tempo", bpm, beats: beatsPerBar });
+}
+
+export async function setBars(bars: number): Promise<LooperState> {
+  return postLooper({ action: "bars", bars });
+}
+
+export async function setClick(
+  mode: "off" | "countin" | "countin-record",
+): Promise<LooperState> {
+  return postLooper({ action: "click", click: mode });
 }

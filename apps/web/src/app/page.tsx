@@ -25,6 +25,7 @@ import styles from "./chain.module.css";
 import { LooperPanel } from "./looper-ui";
 import type { ChainPreset } from "./presets";
 import { WaveformPanel } from "./waveform-ui";
+import { queryKeys } from "./queries";
 
 const APPLY_DEBOUNCE_MS = 300;
 
@@ -158,7 +159,7 @@ export default function Home() {
   const preBypass = useRef<Record<string, boolean> | null>(null);
 
   const chainQuery = useQuery({
-    queryKey: ["chain"],
+    queryKey: queryKeys.chain,
     queryFn: getChain,
     retry: 1,
   });
@@ -498,7 +499,15 @@ export default function Home() {
         </div>
       ) : (
         <div className={styles.body}>
-          <LooperPanel />
+          <LooperPanel
+            onCancelPendingApply={() => {
+              if (applyTimer.current) {
+                clearTimeout(applyTimer.current);
+                applyTimer.current = null;
+              }
+              setPending(false);
+            }}
+          />
         </div>
       )}
     </main>
