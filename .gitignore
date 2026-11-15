@@ -13,6 +13,9 @@ dist
 # CMake (pi/agent)
 pi/agent/build/
 
+# API-owned recording library
+apps/api/data/
+
 # Local env files. .env.example is committed on purpose.
 .env
 .env.local

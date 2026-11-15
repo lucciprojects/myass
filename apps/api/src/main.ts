@@ -28,10 +28,11 @@ async function bootstrap() {
   // without this the browser preflight for PUT /devices/chain is answered with
   // an allow-methods that omits PUT, and Firefox rejects the whole request as
   // a network error before the body is ever sent. A GET-only chain load
-  // appears to work, which hides it.
+  // appears to work, which hides it. PATCH and DELETE cover project rename and
+  // delete.
   await app.register(cors, {
     origin: origins,
-    methods: ["GET", "HEAD", "POST", "PUT", "OPTIONS"],
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });
 
   await app.listen({

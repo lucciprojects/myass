@@ -208,6 +208,9 @@ export class ControlClient implements OnModuleDestroy {
   private backoff = BACKOFF_MIN_MS;
   private reconnectTimer: NodeJS.Timeout | undefined;
   private disposed = false;
+  private connected = false;
+  private readonly connectListeners = new Set<() => void>();
+  private readonly disconnectListeners = new Set<() => void>();
 
   constructor() {
     this.host = process.env.MYASS_AGENT_HOST ?? DEFAULT_HOST;
@@ -226,8 +229,45 @@ export class ControlClient implements OnModuleDestroy {
     this.failAll(new Error("control client disposed"));
   }
 
-  async setChain(slots: EffectSlot[]): Promise<EffectSlot[]> {
-    // RESET first so a chain rejected part way through is cleared by the next
+  isConnected(): boolean {
+    return (
+      this.connected &&
+      this.socket !== undefined &&
+      !this.socket.destroyed &&
+      this.socket.writable
+    );
+  }
+
+  /**
+   * Subscribes to agent connection changes. The listener set is owned by the
+   * caller so a module can unsubscribe on shutdown; a listener that throws
+   * cannot break the socket or the other listeners.
+   */
+  onConnect(listener: () => void): () => void {
+    this.connectListeners.add(listener);
+    return () => this.connectListeners.delete(listener);
+  }
+
+  onDisconnect(listener: () => void): () => void {
+    this.disconnectListeners.add(listener);
+    return () => this.disconnectListeners.delete(listener);
+  }
+
+  private notify(listeners: Set<() => void>): void {
+    for (const listener of listeners) {
+      try {
+        listener();
+      } catch (error) {
+        this.logger.warn(
+          `agent listener failed: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
+    }
+  }
+
+  async setChain(slots: EffectSlot[]): Promise<EffectSlot[]> {    // RESET first so a chain rejected part way through is cleared by the next
     // attempt rather than lingering in the agent's staging area.
     const [reset] = await this.command("CHAIN RESET");
 
@@ -756,9 +796,11 @@ export class ControlClient implements OnModuleDestroy {
 
     socket.once("connect", () => {
       this.backoff = BACKOFF_MIN_MS;
+      this.connected = true;
       this.logger.log(`connected to agent at ${this.host}:${this.port}`);
       // An idle control connection is normal; only the handshake is bounded.
       socket.setTimeout(0);
+      this.notify(this.connectListeners);
     });
 
     socket.on("data", (chunk: Buffer) => this.onData(chunk));
@@ -770,6 +812,9 @@ export class ControlClient implements OnModuleDestroy {
   }
 
   private onClose(): void {
+    const wasConnected = this.connected;
+
+    this.connected = false;
     this.socket = undefined;
     this.buffer = "";
     this.failAll(
@@ -777,6 +822,11 @@ export class ControlClient implements OnModuleDestroy {
         `agent at ${this.host}:${this.port} disconnected`,
       ),
     );
+
+    if (wasConnected) {
+      this.notify(this.disconnectListeners);
+    }
+
     this.scheduleReconnect();
   }
 

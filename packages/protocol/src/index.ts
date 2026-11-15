@@ -96,6 +96,58 @@ export const LooperStateSchema = z.object({
 });
 
 /**
+ * A project id is either a UUID or the reserved working session. The API
+ * refuses anything else before it builds a path, which is the traversal guard
+ * for the filesystem-backed library.
+ */
+export const ProjectIdSchema = z
+  .string()
+  .regex(
+    /^(?:working|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/,
+  );
+
+export const ProjectNameSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+});
+
+/**
+ * One row in the project library. A corrupt directory still appears with
+ * valid: false so it can be deleted, but it carries no musical data.
+ */
+export const ProjectSummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  valid: z.boolean(),
+  updatedAt: z.string(),
+  bpm: z.number(),
+  beatsPerBar: z.number().int(),
+  bars: z.number().int(),
+  sampleRate: z.number().int(),
+  // Derived from loopSamples for display; loopSamples stays authoritative.
+  loopSeconds: z.number(),
+  layerCount: z.number().int(),
+  sizeBytes: z.number().int(),
+});
+
+export const ProjectStatusSchema = z.enum(["saved", "saving", "agentOffline"]);
+
+export const ProjectListSchema = z.object({
+  working: ProjectSummarySchema,
+  projects: z.array(ProjectSummarySchema),
+  // Label of the transfer holding the operation queue, if any.
+  busy: z.string().nullable(),
+  status: ProjectStatusSchema,
+  // The working session has changes not yet copied to a named project.
+  dirty: z.boolean(),
+  linkedProjectId: z.string().nullable(),
+});
+
+export const ProjectLoadResultSchema = z.object({
+  loaded: z.literal(true),
+  state: LooperStateSchema,
+});
+
+/**
  * Verbs map one to one onto the agent's LOOP command, which takes the layer as a
  * bare positional argument and the value after it. clear with no layer wipes
  * every layer; undo clears the most recent one. record takes an optional max in
@@ -403,6 +455,10 @@ export type LooperLayer = z.infer<typeof LooperLayerSchema>;
 export type LooperState = z.infer<typeof LooperStateSchema>;
 export type LooperAction = z.infer<typeof LooperActionSchema>;
 export type ClickMode = z.infer<typeof ClickModeSchema>;
+export type ProjectSummary = z.infer<typeof ProjectSummarySchema>;
+export type ProjectStatus = z.infer<typeof ProjectStatusSchema>;
+export type ProjectList = z.infer<typeof ProjectListSchema>;
+export type ProjectLoadResult = z.infer<typeof ProjectLoadResultSchema>;
 export type OutputSink = z.infer<typeof OutputSinkSchema>;
 export type OutputState = z.infer<typeof OutputStateSchema>;
 
