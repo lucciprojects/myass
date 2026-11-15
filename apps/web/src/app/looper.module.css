@@ -1,0 +1,582 @@
+/* Self contained on purpose. The looper is the part of this UI most likely to
+   be cut, and keeping it in its own module means deleting one file and one
+   import removes all of it. */
+
+.panel {
+  border: 1px solid var(--coffee-400);
+  border-radius: var(--radius-lg);
+  background: var(--cream-100);
+  color: var(--ink-bark);
+  overflow: hidden;
+  box-shadow: 0 10px 28px rgb(20 8 2 / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.2);
+}
+
+/* The engraved faceplate hat: dark wood strip carrying the module title. */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgb(246 238 220 / 0.12);
+  background: linear-gradient(180deg, var(--sequoia-700), var(--sequoia-800));
+}
+
+.headerTitle {
+  margin: 0;
+  font-family: var(--font-title);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  color: var(--ink-cream);
+}
+
+.headerMeta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-husk);
+  font-variant-numeric: tabular-nums;
+}
+
+.headerSpacer {
+  flex: 1;
+}
+
+/* ---------- transport ---------- */
+
+.transport {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--coffee-400);
+  background: var(--cream-200);
+}
+
+.globalButton {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--sequoia-800);
+  background: linear-gradient(180deg, var(--sequoia-700), var(--sequoia-800));
+  color: var(--ink-cream);
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  box-shadow: 0 2px 0 rgb(24 9 2 / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.12);
+  transition: filter 120ms ease, border-color 120ms ease;
+}
+
+.globalButton:hover:not(:disabled) {
+  filter: brightness(1.18);
+}
+
+.globalButton:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+/* The master transport key while the loop is running: lit yellow so freeze
+   reads as "on" and resume as "off", matching yellow = alive. */
+.globalActionOn {
+  border-color: rgb(255 217 61 / 0.8);
+  color: var(--led-yellow);
+  box-shadow: 0 2px 0 rgb(24 9 2 / 0.5), 0 0 10px rgb(255 217 61 / 0.3),
+    inset 0 1px 0 rgb(255 255 255 / 0.12);
+}
+
+.transportNote {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-clay);
+  letter-spacing: 0.5px;
+}
+
+/* ---------- layers ---------- */
+
+.rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px 18px;
+  border-bottom: 1px solid var(--coffee-300);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.rowEmpty {
+  opacity: 0.7;
+}
+
+.rowRecording {
+  background: rgb(138 44 28 / 0.08);
+}
+
+.rowWaiting {
+  background: rgb(255 217 61 / 0.08);
+}
+
+.index {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--rust-500);
+  color: var(--cream-100);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.rowRecording .index {
+  background: var(--maroon);
+  box-shadow: 0 0 8px rgb(138 44 28 / 0.7);
+}
+
+.rowWaiting .index {
+  background: var(--led-yellow);
+  color: var(--ink-bark);
+  box-shadow: 0 0 8px rgb(255 217 61 / 0.7);
+}
+
+/* The countdown badge: the seconds left as one big digit on an LED face,
+   amber like the wait it describes. Ticks 3, 2, 1 off the wire values so it
+   cannot drift from the audio thread's clock. */
+.countdown {
+  flex-shrink: 0;
+  min-width: 34px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--led-yellow);
+  color: #3a1e04;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 10px rgb(255 217 61 / 0.45), inset 0 -1px 0 rgb(0 0 0 / 0.2);
+}
+
+/* The track is the whole 0..max window, so every layer's length can be read
+   against every other one and against the cap. It runs about 40% of the row
+   between the layer number and the status readout; the button cluster keeps
+   its own size. */
+.track {
+  position: relative;
+  flex: 0 1 40%;
+  min-width: 180px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg, var(--sequoia-800), var(--sequoia-700));
+  border: 1px solid var(--coffee-500);
+  box-shadow: inset 0 2px 6px rgb(0 0 0 / 0.55);
+  overflow: hidden;
+}
+
+.fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: rgb(255 217 61 / 0.22);
+  border-right: 1px solid rgb(255 217 61 / 0.7);
+}
+
+.fillPlaying {
+  background: rgb(255 217 61 / 0.35);
+}
+
+.fillRecording {
+  background: rgb(138 44 28 / 0.45);
+  border-right-color: rgb(138 44 28 / 0.75);
+}
+
+.fillMuted {
+  background: rgb(122 82 51 / 0.25);
+  border-right-color: rgb(122 82 51 / 0.6);
+}
+
+.head {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--led-yellow);
+  box-shadow: 0 0 8px rgb(255 217 61 / 0.8);
+}
+
+.length {
+  min-width: 54px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-bark);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.status {
+  min-width: 46px;
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  color: var(--ink-clay);
+  flex-shrink: 0;
+}
+
+.statusRec {
+  color: var(--maroon);
+}
+
+.statusPlay {
+  color: color-mix(in srgb, var(--led-yellow) 70%, var(--ink-bark));
+}
+
+.statusWarn {
+  color: color-mix(in srgb, var(--amber-400) 55%, var(--ink-bark));
+}
+
+/* ---------- per layer controls ---------- */
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* The per-layer keys share the faceplate language of the tab bar: a raised
+   coffee button with its own LED pinhole that lights per state (maroon =
+   recording, yellow = active/armed, rust = stale chain). */
+.action {
+  position: relative;
+  height: 32px;
+  min-width: 46px;
+  padding: 6px 12px 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgb(46 20 5 / 0.85);
+  background: linear-gradient(180deg, var(--coffee-300), var(--coffee-400));
+  color: var(--ink-bark);
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  box-shadow: 0 2px 0 rgb(24 9 2 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.35);
+  cursor: pointer;
+  transition: filter 120ms ease, color 120ms ease, box-shadow 120ms ease,
+    border-color 120ms ease, background 120ms ease;
+}
+
+.action::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: rgb(58 36 19 / 0.45);
+  transition: background 120ms ease, box-shadow 120ms ease;
+}
+
+.action:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+/* Off, not ghosted: the key stays a solid darkened face with husk lettering
+   instead of fading away, so an ineligible layer still reads clearly. */
+.action:disabled {
+  background: linear-gradient(180deg, var(--coffee-400), var(--coffee-500));
+  color: var(--ink-husk);
+  box-shadow: 0 1px 0 rgb(24 9 2 / 0.35);
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.actionOn,
+.actionCancel {
+  border-color: rgb(255 217 61 / 0.9);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--led-yellow) 22%, var(--coffee-300)),
+    color-mix(in srgb, var(--led-yellow) 8%, var(--coffee-400))
+  );
+  color: color-mix(in srgb, var(--gold-dark) 78%, var(--ink-bark));
+  box-shadow: 0 2px 0 rgb(24 9 2 / 0.55), 0 0 10px rgb(255 217 61 / 0.25),
+    inset 0 1px 0 rgb(255 255 255 / 0.35);
+}
+
+.actionOn::before,
+.actionCancel::before {
+  background: var(--led-yellow);
+  box-shadow: 0 0 6px rgb(255 217 61 / 0.8);
+}
+
+.actionRec {
+  border-color: var(--maroon);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--maroon) 26%, var(--coffee-300)),
+    color-mix(in srgb, var(--maroon) 10%, var(--coffee-400))
+  );
+  color: var(--maroon);
+  box-shadow: 0 2px 0 rgb(24 9 2 / 0.55), 0 0 10px rgb(138 44 28 / 0.35),
+    inset 0 1px 0 rgb(255 255 255 / 0.35);
+}
+
+.actionRec::before {
+  background: var(--maroon);
+  box-shadow: 0 0 6px rgb(138 44 28 / 0.9);
+}
+
+/* The paste button. Dull rust until the layer's saved chain differs from the
+   live board, then lit rust so a stale take is visible at a glance. */
+.actionChain {
+  border-color: var(--rust-500);
+  color: var(--rust-700);
+}
+
+.actionChain::before {
+  background: var(--rust-500);
+}
+
+.chainDiff {
+  border-color: var(--rust-500);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--rust-500) 24%, var(--coffee-300)),
+    color-mix(in srgb, var(--rust-500) 10%, var(--coffee-400))
+  );
+  color: var(--ink-bark);
+  box-shadow: 0 2px 0 rgb(24 9 2 / 0.55), 0 0 10px rgb(193 82 43 / 0.4),
+    inset 0 1px 0 rgb(255 255 255 / 0.35);
+}
+
+.chainDiff::before {
+  background: var(--rust-500);
+  box-shadow: 0 0 6px rgb(193 82 43 / 0.9);
+}
+
+.actionDanger:hover:not(:disabled) {
+  border-color: var(--maroon);
+  color: var(--maroon);
+}
+
+/* The per-row max picker: what the next take on this row may run to. A single
+   select beats a row of radio buttons and reads the same as the track caps. */
+.maxWrap {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+/* The per-row max picker is a key like its neighbours: raised coffee face,
+   hard bottom edge, and a small rust chevron. The menu it opens is a real
+   panel — a native <select> popup is drawn by the OS and cannot be themed. */
+.maxSelect {
+  height: 32px;
+  width: 60px;
+  padding: 0 24px 0 10px;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgb(46 20 5 / 0.85);
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='6' viewBox='0 0 8 6'%3E%3Cpath d='M0 0l4 6 4-6z' fill='%2397381f'/%3E%3C/svg%3E")
+      no-repeat right 10px center / 8px 6px,
+    linear-gradient(180deg, var(--coffee-300), var(--coffee-400));
+  color: var(--ink-bark);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  box-shadow: 0 2px 0 rgb(24 9 2 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.35);
+  outline: none;
+  cursor: pointer;
+  transition: filter 120ms ease, border-color 120ms ease;
+}
+
+.maxSelect:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.maxSelect:focus-visible {
+  border-color: rgb(208 160 26 / 0.7);
+}
+
+/* Just the MAX key's slot in the row. The menu itself floats portaled to the
+   body so nothing in the panel can clip it or stack above it. */
+.maxPicker {
+  flex-shrink: 0;
+}
+
+/* A floating sequoia panel of keys, in the same language as the tab rail.
+   Fixed and portaled: anchored to the trigger's screen position, above
+   everything — including the panel's overflow clip and later rows. */
+.maxMenu {
+  position: fixed;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  min-width: 76px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(180deg, var(--sequoia-700), var(--sequoia-800));
+  border: 1px solid rgb(246 238 220 / 0.15);
+  box-shadow: 0 10px 24px rgb(20 8 2 / 0.6), inset 0 1px 0 rgb(255 255 255 / 0.1);
+}
+
+.maxOption {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgb(46 20 5 / 0.85);
+  background: linear-gradient(180deg, var(--coffee-300), var(--coffee-400));
+  color: var(--ink-bark);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  box-shadow: 0 1px 0 rgb(24 9 2 / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.3);
+  cursor: pointer;
+  transition: filter 120ms ease, border-color 120ms ease;
+}
+
+.maxOption:hover {
+  filter: brightness(1.08);
+}
+
+.maxOptionActive {
+  border-color: rgb(255 217 61 / 0.85);
+  background: linear-gradient(180deg, var(--coffee-500), var(--coffee-400));
+  color: color-mix(in srgb, var(--led-yellow) 70%, var(--ink-bark));
+}
+
+.maxSelect:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.levelWrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 116px;
+  flex-shrink: 0;
+}
+
+.levelLabel {
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  color: var(--ink-clay);
+}
+
+.levelValue {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-bark);
+  font-variant-numeric: tabular-nums;
+  min-width: 26px;
+  text-align: right;
+}
+
+.slider {
+  flex: 1;
+  min-width: 0;
+  height: 4px;
+  appearance: none;
+  border-radius: 999px;
+  background: #bfa87e;
+  box-shadow: inset 0 1px 3px rgb(58 36 19 / 0.5);
+  outline: none;
+}
+
+.slider:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 35% 30%,
+    var(--cream-100),
+    var(--coffee-500) 72%
+  );
+  border: 1px solid var(--ink-clay);
+  box-shadow: 0 2px 3px rgb(46 20 5 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.55);
+  cursor: grab;
+}
+
+.slider::-webkit-slider-thumb:disabled {
+  cursor: not-allowed;
+}
+
+.slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 35% 30%,
+    var(--cream-100),
+    var(--coffee-500) 72%
+  );
+  border: 1px solid var(--ink-clay);
+  box-shadow: 0 2px 3px rgb(46 20 5 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.55);
+  cursor: grab;
+}
+
+/* A warning plate sitting as the panel footer, beneath the layer rows. */
+.failure {
+  margin: 14px 18px 18px;
+  padding: 10px 12px;
+  border: 1px solid rgb(138 44 28 / 0.5);
+  border-left: 3px solid var(--maroon);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg, var(--cream-100), var(--coffee-300));
+  color: var(--maroon);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.5), 0 1px 0 rgb(46 20 5 / 0.25);
+}
+
+.empty {
+  padding: 34px 18px;
+  text-align: center;
+  color: var(--ink-clay);
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .row {
+    flex-wrap: wrap;
+  }
+
+  .track {
+    min-width: 100%;
+    order: 3;
+  }
+}

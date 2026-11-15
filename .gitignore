@@ -1,0 +1,24 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build output (Next.js, Nest, tsc)
+.next
+dist
+*.tsbuildinfo
+
+# Turborepo
+.turbo
+
+# CMake (pi/agent)
+pi/agent/build/
+
+# Local env files. .env.example is committed on purpose.
+.env
+.env.local
+.env.*.local
+
+# Editors and OS
+.vscode
+.DS_Store
+*.log

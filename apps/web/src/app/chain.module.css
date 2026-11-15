@@ -1,0 +1,808 @@
+.page {
+  min-height: 100vh;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgb(0 0 0 / 0.045) 0 2px,
+      transparent 2px 118px
+    ),
+    radial-gradient(
+      140% 100% at 50% 0%,
+      var(--sequoia-600) 0%,
+      var(--sequoia-700) 48%,
+      var(--sequoia-800) 100%
+    );
+  color: var(--ink-cream);
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-body);
+}
+
+/* ---------- sticky header: identity + chain overview ---------- */
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgb(70 34 12 / 0.85);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgb(246 238 220 / 0.12);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 32px 14px;
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.eyebrow {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  color: var(--ink-husk);
+}
+
+.title {
+  font-family: var(--font-title);
+  font-size: 19px;
+  margin: 0;
+  letter-spacing: -0.5px;
+  color: var(--ink-cream);
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-husk);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.statusDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--led-yellow);
+  box-shadow: 0 0 8px rgb(255 217 61 / 0.8);
+  flex-shrink: 0;
+}
+
+.statusDotBusy {
+  background: var(--amber-400);
+  box-shadow: 0 0 8px rgb(255 184 77 / 0.8);
+  animation: pulse 700ms ease-in-out infinite alternate;
+}
+
+.statusDotDown {
+  background: rgb(138 44 28 / 0.6);
+  box-shadow: none;
+}
+
+@keyframes pulse {
+  from {
+    opacity: 0.35;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* The output route key sits in the topbar next to the status pill. It is a
+   faceplate key like the toolbar's, but slimmer so it rides the same line as
+   the pill. */
+.topActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.outputKey {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgb(46 20 5 / 0.85);
+  background: linear-gradient(180deg, var(--coffee-300), var(--coffee-400));
+  color: var(--ink-bark);
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  box-shadow: 0 2px 0 rgb(24 9 2 / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.35);
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: filter 120ms ease, box-shadow 120ms ease;
+}
+
+.outputKey:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.outputKey:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 rgb(24 9 2 / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.35);
+}
+
+.outputKey:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 32px 18px;
+  overflow-x: auto;
+}
+
+.node {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  color: var(--ink-husk);
+  flex-shrink: 0;
+}
+
+.arrow {
+  color: var(--coffee-500);
+  font-size: 9px;
+  flex-shrink: 0;
+}
+
+.stripEmpty {
+  font-size: 11px;
+  color: var(--ink-husk);
+  font-style: italic;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--coffee-400);
+  background: var(--cream-100);
+  color: var(--ink-bark);
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+  box-shadow: 0 2px 0 rgb(46 20 5 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.4);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.chip:hover {
+  border-color: var(--rust-500);
+}
+
+.chipSelected {
+  border-color: var(--led-yellow);
+  box-shadow:
+    0 0 0 1px var(--led-yellow),
+    0 2px 0 rgb(46 20 5 / 0.4),
+    inset 0 1px 0 rgb(255 255 255 / 0.4);
+}
+
+.chipOff {
+  color: var(--ink-clay);
+  opacity: 0.7;
+}
+
+.chipIndex {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--ink-clay);
+}
+
+.chipDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--coffee-300);
+}
+
+.chipDotOn {
+  background: var(--led-yellow);
+  box-shadow: 0 0 6px rgb(255 217 61 / 0.8);
+}
+
+.stripSpacer {
+  flex: 1;
+  min-width: 12px;
+}
+
+.stripClear {
+  border: none;
+  background: none;
+  color: var(--ink-husk);
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  padding: 4px 6px;
+  flex-shrink: 0;
+}
+
+.stripClear:hover {
+  color: var(--maroon);
+}
+
+/* ---------- tabs: raised faceplate keys ---------- */
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin: 0 32px 14px;
+}
+
+/* A faceplate key: raised coffee face with a hard bottom edge and a top
+   highlight, carrying its own little LED. */
+.tab {
+  position: relative;
+  height: 32px;
+  padding: 6px 16px 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgb(46 20 5 / 0.85);
+  background: linear-gradient(180deg, var(--coffee-300), var(--coffee-400));
+  color: var(--ink-bark);
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  box-shadow: 0 2px 0 rgb(24 9 2 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.35);
+  cursor: pointer;
+  transition: filter 120ms ease, box-shadow 120ms ease,
+    border-color 120ms ease, background 120ms ease;
+}
+
+.tab::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: rgb(58 36 19 / 0.45);
+  transition: background 120ms ease, box-shadow 120ms ease;
+}
+
+.tab:hover {
+  filter: brightness(1.1);
+}
+
+/* Down: the key is pressed into the header — lowered, top highlight gone,
+   shadows flipped to inset — but it keeps its coffee face. Only its LED
+   turns gold, so pressing reads as depth, not a recolor. */
+.tabActive {
+  border-color: rgb(46 20 5 / 0.9);
+  background: linear-gradient(180deg, var(--coffee-500), var(--coffee-400));
+  transform: translateY(2px);
+  box-shadow: inset 0 2px 4px rgb(0 0 0 / 0.45), 0 1px 0 rgb(24 9 2 / 0.4);
+}
+
+.tabActive::before {
+  background: var(--led-yellow);
+  box-shadow: 0 0 6px rgb(255 217 61 / 0.8);
+}
+
+/* ---------- slots ---------- */
+
+.body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 24px 32px 36px;
+}
+
+.slots {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.empty {
+  padding: 56px 24px;
+  border: 1px dashed var(--coffee-500);
+  border-radius: var(--radius-lg);
+  text-align: center;
+  color: var(--ink-husk);
+  font-size: 13px;
+}
+
+.slot {
+  border: 1px solid var(--coffee-400);
+  border-radius: var(--radius-lg);
+  background: var(--cream-100);
+  color: var(--ink-bark);
+  overflow: hidden;
+  box-shadow: 0 6px 18px rgb(30 12 2 / 0.35), inset 0 1px 0 rgb(255 255 255 / 0.25);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.slot:hover {
+  border-color: var(--coffee-300);
+}
+
+.slotSelected {
+  border-color: var(--led-yellow);
+  box-shadow: 0 0 0 1px var(--led-yellow), 0 8px 22px rgb(20 8 2 / 0.5);
+}
+
+.slotDisabled {
+  opacity: 0.55;
+}
+
+.slotRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  /* Mirror the select's own 18px padding so the toggle (and the move/remove
+     keys once selected) never hug the row's edge; the body below aligns on
+     the same line. */
+  padding-right: 18px;
+}
+
+.slotSelect {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+  padding: 14px 18px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.slotIndex {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--rust-500);
+  color: var(--cream-100);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.slotSelected .slotIndex {
+  background: var(--led-yellow);
+  color: var(--ink-bark);
+  box-shadow: 0 0 8px rgb(255 217 61 / 0.6);
+}
+
+.slotName {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--ink-bark);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slotState {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  color: var(--ink-clay);
+  flex-shrink: 0;
+}
+
+.slotStateOn {
+  color: var(--rust-500);
+}
+
+.slotActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.toggle {
+  width: 36px;
+  height: 21px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 1px solid var(--coffee-400);
+  background: #c7b187;
+  box-shadow: inset 0 2px 4px rgb(58 36 19 / 0.5);
+  padding: 2px;
+  display: flex;
+  justify-content: flex-start;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.toggleOn {
+  border-color: var(--rust-500);
+  background: #b19a6e;
+  justify-content: flex-end;
+}
+
+.toggleKnob {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--cream-100), var(--coffee-300));
+  box-shadow: 0 1px 2px rgb(58 36 19 / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.6);
+  transition: background 120ms ease;
+}
+
+.toggleOn .toggleKnob {
+  background: var(--led-yellow);
+  box-shadow: 0 0 8px rgb(255 217 61 / 0.7), inset 0 1px 0 rgb(255 255 255 / 0.5);
+}
+
+.iconButton {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--coffee-400);
+  background: linear-gradient(180deg, var(--cream-100), var(--coffee-300));
+  color: var(--ink-clay);
+  font-size: 11px;
+  line-height: 1;
+  box-shadow: 0 1px 0 rgb(46 20 5 / 0.35), inset 0 1px 0 rgb(255 255 255 / 0.5);
+}
+
+.iconButton:hover:not(:disabled) {
+  border-color: var(--rust-500);
+  color: var(--ink-bark);
+}
+
+.iconButton:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+.slotBody {
+  border-top: 1px solid var(--coffee-300);
+  background: var(--cream-200);
+  padding: 16px 18px 20px;
+}
+
+.slotDescription {
+  margin: 0 0 18px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-clay);
+  max-width: 60ch;
+}
+
+/* ---------- params ---------- */
+
+.paramGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px 28px;
+}
+
+.paramHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  margin-bottom: 8px;
+}
+
+.paramLabel {
+  color: var(--ink-clay);
+  text-transform: uppercase;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.8px;
+}
+
+.paramValue {
+  color: var(--ink-bark);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.slider {
+  width: 100%;
+  height: 4px;
+  appearance: none;
+  border-radius: 999px;
+  background: #c3ad83;
+  box-shadow: inset 0 1px 3px rgb(58 36 19 / 0.5);
+  outline: none;
+}
+
+.slider:hover {
+  background: #b8a275;
+}
+
+.slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 35% 30%,
+    var(--cream-100),
+    var(--coffee-500) 72%
+  );
+  border: 1px solid var(--ink-clay);
+  box-shadow: 0 2px 3px rgb(46 20 5 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.55);
+  cursor: grab;
+  transition: transform 100ms ease;
+}
+
+.slider:active::-webkit-slider-thumb {
+  transform: scale(1.2);
+  cursor: grabbing;
+}
+
+.slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 35% 30%,
+    var(--cream-100),
+    var(--coffee-500) 72%
+  );
+  border: 1px solid var(--ink-clay);
+  box-shadow: 0 2px 3px rgb(46 20 5 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.55);
+  cursor: grab;
+}
+
+/* ---------- toolbar ---------- */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.addWrapper {
+  position: relative;
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgb(30 12 2 / 0.5);
+}
+
+.button {
+  height: 38px;
+  padding: 0 18px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--sequoia-800);
+  background: linear-gradient(180deg, var(--coffee-300), var(--coffee-400));
+  color: var(--ink-bark);
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  box-shadow: 0 2px 0 rgb(24 9 2 / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.35);
+  transition: filter 120ms ease, color 120ms ease;
+}
+
+.button:hover:not(:disabled) {
+  filter: brightness(1.08);
+  color: var(--ink-bark);
+}
+
+.button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 rgb(24 9 2 / 0.5), inset 0 1px 0 rgb(255 255 255 / 0.35);
+}
+
+.button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.buttonGhost {
+  border-color: transparent;
+  background: none;
+  color: var(--ink-husk);
+  box-shadow: none;
+}
+
+.buttonGhost:hover:not(:disabled) {
+  filter: none;
+  background: none;
+  color: var(--ink-cream);
+  border-color: transparent;
+}
+
+.bypassOn {
+  border-color: var(--amber-400);
+  background: rgb(255 184 77 / 0.14);
+  color: var(--amber-400);
+  box-shadow: 0 0 0 1px rgb(255 184 77 / 0.7), inset 0 1px 0 rgb(255 255 255 / 0.1);
+}
+
+.menu {
+  position: fixed;
+  z-index: 31;
+  overflow-y: auto;
+  background: var(--cream-100);
+  border: 1px solid var(--coffee-400);
+  border-radius: var(--radius-lg);
+  padding: 6px;
+  box-shadow: 0 24px 60px rgb(20 8 2 / 0.7);
+}
+
+.menuItem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 11px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--ink-bark);
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.menuItem:hover {
+  background: var(--cream-200);
+}
+
+.menuItemCurrent {
+  color: var(--gold-dark);
+  background: color-mix(in srgb, var(--gold-dark) 8%, var(--cream-100));
+}
+
+.menuItemCurrent:hover {
+  background: color-mix(in srgb, var(--gold-dark) 14%, var(--cream-100));
+}
+
+.menuDescription {
+  display: block;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink-clay);
+  margin-top: 3px;
+  line-height: 1.45;
+}
+
+/* ---------- payload preview ---------- */
+
+.scope {
+  margin-top: 4px;
+}
+
+.scopeEmpty {
+  padding: 40px 0;
+  border-top: 1px solid rgb(246 238 220 / 0.12);
+  color: var(--ink-husk);
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+
+.payload {
+  border-top: 1px solid rgb(246 238 220 / 0.12);
+  padding-top: 14px;
+  font-size: 12px;
+  color: var(--ink-cream);
+}
+
+.appliedCount {
+  align-self: center;
+  color: var(--ink-husk);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  white-space: nowrap;
+}
+
+/* The reason a request failed. Without this the pill says "apply failed" for
+   everything from a rejected param to the API not running at all. */
+/* A warning plate: buff face with a maroon left rule, like an engraved
+   indicator label screwed to the wood. Sits beneath the graphs. */
+.failure {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border: 1px solid rgb(138 44 28 / 0.5);
+  border-left: 3px solid var(--maroon);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg, var(--cream-200), var(--coffee-300));
+  color: var(--maroon);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45), 0 2px 0 rgb(24 9 2 / 0.3);
+}
+
+.payloadSummary {
+  cursor: pointer;
+  color: var(--ink-husk);
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  font-weight: 800;
+}
+
+.payloadSummary:hover {
+  color: var(--ink-cream);
+}
+
+.payloadPre {
+  margin: 12px 0 0;
+  padding: 14px;
+  background: var(--sequoia-800);
+  border: 1px solid rgb(246 238 220 / 0.12);
+  border-radius: var(--radius-lg);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-x: auto;
+  max-height: 260px;
+}
+
+@media (max-width: 640px) {
+  .topbar {
+    padding: 14px 18px 10px;
+  }
+
+  .tabs {
+    margin: 0 18px 12px;
+  }
+
+  .strip {
+    padding: 0 18px 14px;
+  }
+
+  .body {
+    padding: 18px 18px 28px;
+  }
+}

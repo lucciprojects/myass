@@ -1,0 +1,55 @@
+:root {
+  color-scheme: dark;
+
+  /* SEQUOIA — warm analog retro, 70s rock nostalgia, earthy autumnal tones.
+     Dark wood browns carry the page, aged-buff surfaces carry the modules,
+     rust separates, yellow is "alive" (play / armed / selection), and a deep
+     maroon is reserved sparsely for record and danger. */
+  --sequoia-800: #331a09; /* page gradient deep end, wells, footers    */
+  --sequoia-700: #46220c; /* hats, inset wells                         */
+  --sequoia-600: #5c2c10; /* page base — dark sequoia                  */
+  --coffee-500:  #96663a; /* dividers, canvas frames                   */
+  --coffee-400:  #a87f53; /* secondary surfaces, borders               */
+  --coffee-300:  #c2a077; /* raised edges, button faces                */
+  --cream-200:   #c7b18a; /* card alt, wells                           */
+  --cream-100:   #d6c49e; /* card / container — aged buff              */
+  --ink-bark:    #2c1a0d; /* text on buff                             */
+  --ink-clay:    #6d4a2c; /* muted text on buff                       */
+  --ink-cream:   #f0e6d2; /* text on brown                            */
+  --ink-husk:    #b3956f; /* engraved-label text on brown             */
+  --rust-500:    #c1522b; /* knobs, active module edge, index faces   */
+  --rust-700:    #97381f; /* deep accent                              */
+  --led-yellow:  #ffd93d; /* live: play, armed, selection, status     */
+  --gold-dark:   #d0a01a; /* active tab — darker yellow               */
+  --maroon:      #8a2c1c; /* record / danger — used sparingly         */
+  --amber-400:   #ffb84d; /* cut / busy / warn / bypass               */
+
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+
+  --font-display: "Archivo", "Space Grotesk", "Montserrat", ui-sans-serif,
+    system-ui, sans-serif;
+  --font-title: "Chivo", "Space Grotesk", "Montserrat", ui-sans-serif,
+    system-ui, sans-serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, sans-serif;
+  --font-mono: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  background: #331a09;
+  color: var(--ink-cream);
+  font-family: var(--font-body);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+button {
+  cursor: pointer;
+}
