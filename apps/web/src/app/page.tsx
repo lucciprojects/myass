@@ -68,11 +68,11 @@ function OutputKey() {
   const mutation = useMutation({
     mutationFn: (node: string) => routeOutput(node),
     onMutate: async (node) => {
-      await queryClient.cancelQueries({ queryKey: ["output"] });
-      const previous = queryClient.getQueryData<OutputState>(["output"]);
+      await queryClient.cancelQueries({ queryKey: queryKeys.output });
+      const previous = queryClient.getQueryData<OutputState>(queryKeys.output);
 
       if (previous) {
-        queryClient.setQueryData<OutputState>(["output"], {
+        queryClient.setQueryData<OutputState>(queryKeys.output, {
           ...previous,
           sink: previous.sinks.find((s) => s.node === node) ?? previous.sink,
         });
@@ -82,15 +82,15 @@ function OutputKey() {
     },
     onError: (_error, _variables, context) => {
       if (context?.previous) {
-        queryClient.setQueryData<OutputState>(["output"], context.previous);
+        queryClient.setQueryData<OutputState>(queryKeys.output, context.previous);
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["output"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.output });
     },
   });
 
-  const state = query.data;
+  const state = mounted ? query.data : undefined;
   const sink = state?.sink ?? null;
   const pending = mutation.isPending;
 
@@ -102,7 +102,7 @@ function OutputKey() {
         ref={triggerRef}
         className={styles.outputKey}
         onClick={toggle}
-        disabled={state === undefined || pending}
+        disabled={!mounted || state === undefined || pending}
         aria-expanded={open}
         aria-haspopup="true"
         title={
