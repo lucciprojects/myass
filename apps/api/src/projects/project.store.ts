@@ -145,6 +145,35 @@ export class ProjectStore {
     this.root = path.resolve(root);
   }
 
+  /** Scratch space for exports, on the same filesystem as the projects. */
+  get tempRoot(): string {
+    return path.join(this.root, ".tmp");
+  }
+
+  /**
+   * Resolves a file inside a project. Layer names come from a validated
+   * manifest, but this repeats the check so a future caller cannot join an
+   * arbitrary path onto the library.
+   */
+  filePath(id: string, relative: string): string {
+    this.assertId(id);
+
+    const segments = relative.split("/");
+
+    if (
+      relative.length === 0 ||
+      relative.includes("\\") ||
+      path.isAbsolute(relative) ||
+      segments.some(
+        (segment) => segment === "" || segment === "." || segment === "..",
+      )
+    ) {
+      throw new InvalidProjectError(`unsafe project file: ${relative}`);
+    }
+
+    return path.join(this.directory(id), ...segments);
+  }
+
   async list(): Promise<ProjectSummary[]> {
     let entries;
 

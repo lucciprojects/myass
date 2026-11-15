@@ -57,7 +57,6 @@ type CaptureReason = "autosave" | "save" | "restore";
 @Injectable()
 export class ProjectsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ProjectsService.name);
-  private readonly queue = new OperationQueue();
   private readonly layerCache = new Map<number, CachedLayer>();
   private readonly unsubscribers: Array<() => void> = [];
   private working: Manifest | null = null;
@@ -68,6 +67,7 @@ export class ProjectsService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly control: ControlClient,
     private readonly store: ProjectStore,
+    private readonly queue: OperationQueue,
   ) {}
 
   onModuleInit(): void {

@@ -6,6 +6,7 @@ import {
 } from "@nestjs/platform-fastify";
 import cors from "@fastify/cors";
 import { AppModule } from "./app.module.js";
+import { MAX_BUNDLE_BYTES } from "./projects/bundle.service.js";
 
 const DEFAULT_CORS_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000";
 
@@ -34,6 +35,12 @@ async function bootstrap() {
     origin: origins,
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });
+
+  // useBodyParser marks parser registration as complete, which would skip the
+  // adapter's own JSON and urlencoded parsers during init(). Register those
+  // first, then add the ZIP parser, so existing endpoints keep parsing JSON.
+  app.getHttpAdapter().registerParserMiddleware();
+  app.useBodyParser("application/zip", { bodyLimit: MAX_BUNDLE_BYTES });
 
   await app.listen({
     port: Number(process.env.PORT ?? 3001),

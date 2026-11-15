@@ -321,6 +321,7 @@ test("auto-save dumps only layers whose audio changed", async () => {
   const projects = new ProjectsService(
     agent as unknown as ControlClient,
     store,
+    new OperationQueue(),
   );
 
   await projects.initialize();
@@ -372,6 +373,7 @@ test("clear-all empties the working session", async () => {
   const projects = new ProjectsService(
     agent as unknown as ControlClient,
     store,
+    new OperationQueue(),
   );
 
   await projects.initialize();
@@ -407,6 +409,7 @@ test("restore loads a non-empty working session into an empty agent", async () =
   const projects = new ProjectsService(
     agent as unknown as ControlClient,
     store,
+    new OperationQueue(),
   );
 
   await projects.initialize();
@@ -442,6 +445,7 @@ test("restore backs up and adopts a non-empty agent", async () => {
   const projects = new ProjectsService(
     agent as unknown as ControlClient,
     store,
+    new OperationQueue(),
   );
 
   await projects.initialize();

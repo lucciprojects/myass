@@ -147,6 +147,37 @@ export const ProjectLoadResultSchema = z.object({
   state: LooperStateSchema,
 });
 
+export const ProjectExportKindSchema = z.enum(["fl", "bundle"]);
+
+/**
+ * The document written inside an FL Studio export. It is deliberately not a
+ * project manifest: the export is for another DAW, not for re-import, so it
+ * records the rendered files, their peaks, and the tempo map a DAW needs.
+ */
+export const FlExportManifestSchema = z.object({
+  format: z.literal("myass-fl-export"),
+  version: z.literal(1),
+  name: z.string(),
+  bpm: z.number(),
+  beatsPerBar: z.number().int(),
+  bars: z.number().int(),
+  loopSamples: z.number().int().nonnegative(),
+  loopSeconds: z.number(),
+  createdAt: z.string(),
+  layers: z.array(
+    z.object({
+      index: z.number().int(),
+      file: z.string(),
+      dryFile: z.string(),
+      level: z.number(),
+      muted: z.boolean(),
+      chain: ChainSchema,
+      peak: z.number(),
+    }),
+  ),
+  mixPeak: z.number(),
+});
+
 /**
  * Verbs map one to one onto the agent's LOOP command, which takes the layer as a
  * bare positional argument and the value after it. clear with no layer wipes
@@ -459,6 +490,8 @@ export type ProjectSummary = z.infer<typeof ProjectSummarySchema>;
 export type ProjectStatus = z.infer<typeof ProjectStatusSchema>;
 export type ProjectList = z.infer<typeof ProjectListSchema>;
 export type ProjectLoadResult = z.infer<typeof ProjectLoadResultSchema>;
+export type ProjectExportKind = z.infer<typeof ProjectExportKindSchema>;
+export type FlExportManifest = z.infer<typeof FlExportManifestSchema>;
 export type OutputSink = z.infer<typeof OutputSinkSchema>;
 export type OutputState = z.infer<typeof OutputStateSchema>;
 

@@ -9,9 +9,12 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   ServiceUnavailableException,
+  StreamableFile,
 } from "@nestjs/common";
 import {
+  ProjectExportKindSchema,
   ProjectIdSchema,
   ProjectListSchema,
   ProjectLoadResultSchema,
@@ -19,6 +22,9 @@ import {
   ProjectSummarySchema,
 } from "@myass/protocol";
 import { AgentUnavailableError } from "../agent/control.client.js";
+import { InvalidBundleError } from "../zip/errors.js";
+import { BundleService } from "./bundle.service.js";
+import { ExportService } from "./export.service.js";
 import { InvalidProjectError } from "./manifest.js";
 import { ProjectNotFoundError } from "./project.store.js";
 import { ProjectsService } from "./projects.service.js";
@@ -26,7 +32,11 @@ import { InvalidWavError } from "./wav.js";
 
 @Controller("projects")
 export class ProjectsController {
-  constructor(private readonly projects: ProjectsService) {}
+  constructor(
+    private readonly projects: ProjectsService,
+    private readonly exports: ExportService,
+    private readonly bundles: BundleService,
+  ) {}
 
   @Get()
   async list() {
@@ -43,6 +53,21 @@ export class ProjectsController {
     );
   }
 
+  @Post("import")
+  async import(@Body() body: unknown) {
+    if (!Buffer.isBuffer(body)) {
+      throw new BadRequestException(
+        "expected an application/zip request body",
+      );
+    }
+
+    return {
+      project: ProjectSummarySchema.parse(
+        await this.call(() => this.bundles.importFromZip(body)),
+      ),
+    };
+  }
+
   @Post(":id/save")
   async save(@Param("id") id: string) {
     return ProjectSummarySchema.parse(
@@ -55,6 +80,28 @@ export class ProjectsController {
     return ProjectLoadResultSchema.parse(
       await this.call(() => this.projects.load(this.projectId(id))),
     );
+  }
+
+  @Get(":id/export")
+  async export(
+    @Param("id") id: string,
+    @Query("kind") kind: unknown,
+  ): Promise<StreamableFile> {
+    const parsed = ProjectExportKindSchema.safeParse(kind);
+
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues);
+    }
+
+    const download = await this.call(() =>
+      this.exports.download(this.projectId(id), parsed.data),
+    );
+
+    return new StreamableFile(download.stream, {
+      type: "application/zip",
+      disposition: `attachment; filename="${download.filename}"`,
+      length: download.size,
+    });
   }
 
   @Patch(":id")
@@ -95,6 +142,14 @@ export class ProjectsController {
     try {
       return await task();
     } catch (error) {
+      if (error instanceof InvalidBundleError) {
+        throw new BadRequestException({
+          error: "invalid_bundle",
+          reason: error.code,
+          message: error.message,
+        });
+      }
+
       if (error instanceof InvalidWavError || error instanceof InvalidProjectError) {
         throw new BadRequestException(error.message);
       }
@@ -111,3 +166,4 @@ export class ProjectsController {
     }
   }
 }
+
